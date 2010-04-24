@@ -116,6 +116,40 @@ status_t handle_get_req(msg_t *req, msg_t *resp) {
   resp->u.get_resp.status = STATUS_SUCCESS;
 
   close(fd);
+  free(filename);
+
+  return STATUS_SUCCESS;
+}
+
+status_t handle_put_req(msg_t *req, msg_t *resp) {
+  char *filename;
+  struct stat stat_buf;
+  char *file_data = NULL;
+  int fd;
+
+  resp->u.put_resp.status = STATUS_FAILURE;
+
+  filename = malloc(strlen(FTPD) + req->u.put_req.filename_len + 1);
+
+  strcpy(filename, FTPD);
+  strcat(filename, req->u.put_req.filename);
+
+  fd = open(filename, O_CREAT|O_WRONLY);
+
+  if(fd <= 0) {
+    printf("put: Unable to open file %s\n", filename);
+    return STATUS_FAILURE;
+  }
+
+  if(write(fd, req->u.put_req.data, req->u.put_req.file_len) 
+      != req->u.put_req.file_len) {
+    perror("put: Error writing to file\n");
+    return STATUS_FAILURE;
+  }
+
+  resp->u.put_resp.status = STATUS_SUCCESS;
+  close(fd);
+  free(filename);
 
   return STATUS_SUCCESS;
 }
@@ -135,11 +169,39 @@ status_t handle_server_message(msg_t *req, msg_t *resp) {
       resp->hdr.type = RSP_GET;
       handle_get_req(req, resp);
       break;
+    case REQ_PUT:
+      resp->hdr.type = RSP_PUT;
+      handle_get_req(req, resp);
+      break;
 
   }
 
   return STATUS_SUCCESS;
 
+}
+
+void free_message(msg_t *msg) {
+
+  switch(msg->hdr.type) {
+    case RSP_GET:
+      if(msg->u.get_resp.data) 
+        free(msg->u.get_resp.data);
+      break;
+    case REQ_GET:
+      if(msg->u.get_req.filename)
+        free(msg->u.get_req.filename);
+      break;
+    case RSP_PUT:
+      break;
+    case REQ_PUT:
+      if(msg->u.put_req.filename)
+        free(msg->u.get_req.filename);
+      if(msg->u.put_req.data)
+        free(msg->u.put_req.data);
+      break;
+  }
+
+  return;
 }
 
 int do_server_loop(SSL *ssl)
@@ -149,13 +211,20 @@ int do_server_loop(SSL *ssl)
     do
     {
       memset(&req, 0, sizeof(msg_t));
+      memset(&resp, 0, sizeof(msg_t));
+
       if(STATUS_FAILURE == receive_payload(ssl, &req)) {
         perror("Socket Error: Thread returning\n");
         break;
       }
 
       handle_server_message(&req, &resp);
-      send_message(resp);
+      send_message(&resp);
+
+      free_message(&req);
+      free_message(&resp);
+      free(req->pkt->buf);
+      free(req->pkt);
     }
     while (1);
     return (SSL_get_shutdown(ssl) & SSL_RECEIVED_SHUTDOWN) ? 1 : 0;

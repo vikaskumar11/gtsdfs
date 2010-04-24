@@ -8,6 +8,22 @@
 #include "msg.h"
 
 
+void message_dump(payload_t *pkt, int pkt_len) {
+  int lim, count;
+
+  lim = pkt_len / 4;
+ 
+  if(lim == 0) lim = 1;
+
+  printf("\nSending Message >> \n");
+  for (count = 0; count < lim; count++)
+	{
+	    printf("  0x%04x: 0x%08x\n",
+		   count * 4, *(unsigned int *)&pkt[count * 4]);
+	}
+
+}
+
 status_t send_payload(SSL *ssl, payload_t *pkt, unsigned int pkt_len) {
 
   int ret = 0;
@@ -45,6 +61,7 @@ status_t send_payload(SSL *ssl, payload_t *pkt, unsigned int pkt_len) {
     }
   }
 
+  dump_message(pkt, pkt_len);
   return STATUS_SUCCESS;
 
 fail:
