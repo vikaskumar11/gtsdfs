@@ -7,7 +7,179 @@
 
 #include "msg.h"
 
-status_t send_get_request(msg_t *msg) {
+
+status_t send_payload(SSL *ssl, payload_t *pkt, unsigned int pkt_len) {
+
+  int ret = 0;
+  int bytes_written = 0;
+
+  pkt->wire_off = 0;
+  while(bytes_written < pkt_len) {
+
+    ret = SSL_write(ssl, pkt->buf+pkt->wire_off, (pkt_len-bytes_written));
+
+    switch(SSL_get_error(ssl, ret)) {
+      case SSL_ERROR_NONE:
+        bytes_written += ret;
+        pkt->wire_off += ret;
+        continue;
+        break;
+      case SSL_ERROR_ZERO_RETURN:
+        perror("SSL_Write Error: Possibly connection closed\n");
+        goto fail;
+        break;
+      case SSL_ERROR_WANT_READ:
+      case SSL_ERROR_WANT_WRITE:
+        perror("SSL_Write Error: Want Read/Want Write\n");
+        goto fail;
+        break;
+      case SSL_ERROR_WANT_CONNECT:
+      case SSL_ERROR_WANT_ACCEPT:
+        perror("SSL Write Error: Want Connect/Want Accept\n");
+        goto fail;
+        break;
+      default:
+        perror("SSL_Write Unkown error\n");
+        goto fail;
+        break;
+    }
+  }
+
+  return STATUS_SUCCESS;
+
+fail:
+  return STATUS_FAILURE;
+}
+
+status_t receive_payload(SSL *ssl, msg_t *msg) {
+  payload_t *pkt;
+  int ret = 0;
+  int bytes_read = 0;
+
+  pkt = malloc(sizeof(payload_t));
+  memset(pkt, 0, sizeof(payload_t));
+
+  ret = SSL_read(ssl, pkt->buf, MSG_HDR_SIZE);
+
+  if(ret != MSG_HDR_SIZE) {
+    perror("Unable to receive message header\n");
+    return STATUS_FAILURE;
+  }
+  
+  msg->hdr.type = pop1(pkt);
+  msg->hdr.tot_len = ntohl(pop4(pkt));
+
+  pkt->buf = malloc(msg->hdr.tot_len);
+  if(pkt->buf == NULL) {
+    free(pkt);
+    return STATUS_FAILURE;
+  }
+
+  bytes_read = MSG_HDR_SIZE;
+  pkt->wire_off = MSG_HDR_SIZE;
+  while(bytes_read < msg->hdr.tot_len) {
+
+    ret = SSL_read(ssl, pkt->buf+pkt->wire_off, (msg->hdr.tot_len-bytes_read));
+    
+    switch(SSL_get_error(ssl, ret)) {
+      case SSL_ERROR_NONE:
+        bytes_read += ret;
+        pkt->wire_off += ret;
+        continue;
+        break;
+      case SSL_ERROR_ZERO_RETURN:
+        perror("SSL_read Error: Possibly connection closed\n");
+        goto fail;
+        break;
+      case SSL_ERROR_WANT_READ:
+      case SSL_ERROR_WANT_WRITE:
+        perror("SSL_read Error: Want Read/Want Write\n");
+        goto fail;
+        break;
+      case SSL_ERROR_WANT_CONNECT:
+      case SSL_ERROR_WANT_ACCEPT:
+        perror("SSL read Error: Want Connect/Want Accept\n");
+        goto fail;
+        break;
+      default:
+        perror("SSL_read Unkown error\n");
+        goto fail;
+        break;
+    }
+  }
+
+  msg->pkt = pkt;
+  return STATUS_SUCCESS;
+
+fail:
+  free(pkt->buf);
+  free(pkt);
+  return STATUS_FAILURE;
+}
+
+status_t send_message(SSL *ssl, msg_t *msg) {
+
+  switch(msg->hdr.type) {
+    case REQ_GET:
+      send_get_request(ssl, msg);
+      break;
+    case REQ_PUT:
+      send_put_request(ssl, msg);
+      break;
+    case REQ_AUTH:
+      send_auth_request(ssl, msg);
+      break;
+    case RSP_GET:
+      send_get_resp(ssl, msg);
+      break;
+    case RSP_PUT:
+      send_put_resp(ssl, msg);
+      break;
+    case RSP_AUTH:
+      send_auth_resp(ssl, msg);
+      break;
+    default:
+      perror("send_message: Unknown request type\n");
+      return STATUS_FAILURE;
+  }
+
+  return STATUS_SUCCESS;
+}
+
+status_t recv_message(SSL *ssl, msg_t *msg) {
+
+  if(STATUS_FAILURE == receive_payload(ssl, msg)) {
+    return STATUS_FAILURE;
+  }
+
+  switch(msg->hdr.type) {
+    case REQ_GET:
+      parse_get_request(msg->pkt, msg);
+      break;
+    case REQ_PUT:
+      parse_put_request(msg->pkt, msg);
+      break;
+    case REQ_AUTH:
+      parse_auth_request(msg->pkt, msg);
+      break;
+    case RSP_GET:
+      parse_get_resp(msg->pkt, msg);
+      break;
+    case RSP_PUT:
+      parse_put_resp(msg->pkt, msg);
+      break;
+    case RSP_AUTH:
+      parse_auth_resp(msg->pkt, msg);
+      break;
+    default:
+      perror("recv_message: Unknown request type\n");
+      return STATUS_FAILURE;
+  }
+
+  return STATUS_SUCCESS;
+}
+
+status_t send_get_request(SSL *ssl, msg_t *msg) {
   payload_t payload;
   payload_t *pkt = &payload;
   uint32_t tmp32;
@@ -60,13 +232,13 @@ status_t send_get_request(msg_t *msg) {
   assert(payload.off == msg->hdr.tot_len);
  
   /* send the message */
-
+  send_payload(ssl, pkt, msg->hdr.tot_len);
 
   free(payload.buf);
   return STATUS_SUCCESS;
 };
 
-status_t send_get_resp(msg_t *msg) {
+status_t send_get_resp(SSL *ssl, msg_t *msg) {
   payload_t payload;
   payload_t *pkt = &payload;
   uint32_t tmp32;
@@ -97,6 +269,7 @@ status_t send_get_resp(msg_t *msg) {
   assert(payload.off == msg->hdr.tot_len);
 
   /* send the payload */
+  send_payload(ssl, pkt, msg->hdr.tot_len);
 
   free(payload.buf);
 
@@ -170,7 +343,7 @@ status_t parse_get_resp(payload_t *pkt, msg_t *msg) {
 }
 
 
-status_t send_put_request(msg_t *msg) {
+status_t send_put_request(SSL *ssl, msg_t *msg) {
   payload_t payload;
   payload_t *pkt = &payload;
   uint32_t tmp32;
@@ -228,13 +401,13 @@ status_t send_put_request(msg_t *msg) {
   assert(payload.off == msg->hdr.tot_len);
  
   /* send the message */
-
+  send_payload(ssl, pkt, msg->hdr.tot_len);
 
   free(payload.buf);
   return STATUS_SUCCESS;
 };
 
-status_t send_put_resp(msg_t *msg) {
+status_t send_put_resp(SSL *ssl, msg_t *msg) {
   payload_t payload;
   payload_t *pkt = &payload;
   uint32_t tmp32;
@@ -258,6 +431,7 @@ status_t send_put_resp(msg_t *msg) {
   assert(payload.off == msg->hdr.tot_len);
 
   /* send the payload */
+  send_payload(ssl, pkt, msg->hdr.tot_len);
 
   free(payload.buf);
 
@@ -326,7 +500,7 @@ status_t parse_put_resp(payload_t *pkt, msg_t *msg) {
   return STATUS_SUCCESS;
 }
 
-status_t send_auth_request(msg_t *msg) {
+status_t send_auth_request(SSL *ssl, msg_t *msg) {
   payload_t payload;
   payload_t *pkt = &payload;
   uint32_t tmp32;
@@ -352,13 +526,13 @@ status_t send_auth_request(msg_t *msg) {
   assert(payload.off == msg->hdr.tot_len);
  
   /* send the message */
-
+  send_payload(ssl, pkt, msg->hdr.tot_len);
 
   free(payload.buf);
   return STATUS_SUCCESS;
 };
 
-status_t send_auth_resp(msg_t *msg) {
+status_t send_auth_resp(SSL *ssl, msg_t *msg) {
   payload_t payload;
   payload_t *pkt = &payload;
   uint32_t tmp32;
@@ -382,6 +556,7 @@ status_t send_auth_resp(msg_t *msg) {
   assert(payload.off == msg->hdr.tot_len);
 
   /* send the payload */
+  send_payload(ssl, pkt, msg->hdr.tot_len);
 
   free(payload.buf);
 

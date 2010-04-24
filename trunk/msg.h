@@ -137,6 +137,14 @@ struct put_resp {
 
 typedef struct put_resp put_resp_t;
 
+struct payload {
+  char *buf;
+  unsigned int off;
+  unsigned int wire_off;
+};
+
+typedef struct payload payload_t;
+
 
 struct msg {
   msg_hdr_t hdr;
@@ -150,16 +158,10 @@ struct msg {
     put_resp_t put_resp;
   } u;
 
+  payload_t *pkt;
 };
 
 typedef struct msg msg_t;
 
-struct payload {
-  char *buf;
-  unsigned int off;
-  unsigned int wire_off;
-};
-
-typedef struct payload payload_t;
 
 #endif
