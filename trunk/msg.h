@@ -1,6 +1,12 @@
 #ifndef __MSG_H__
 #define __MSG_H__
 
+#include <stdint.h>
+#include <stdio.h>
+#include <malloc.h>
+#include <string.h>
+#include <assert.h>
+#include <arpa/inet.h>
 
 #define STATUS_SUCCESS 0
 #define STATUS_FAILURE 1
@@ -32,7 +38,7 @@
   _w2;                                          \
 })
 
-#define pop4(c) ({                               \
+/*#define pop4(c) ({                               \
   uint32_t _w4=0;                               \
   uint8_t _c;                                   \
   _c = pop1(c);                                  \
@@ -43,6 +49,13 @@
   _w4 |= ((_c & 0xff) << 8);                    \
   _c = pop1(c);                                  \
   _w4 |= ((_c & 0xff));                         \
+  _w4;                                          \
+})*/
+
+#define pop4(c) ({                              \
+  uint32_t _w4=0;                               \
+  _w4 = *(unsigned int *)(c->buf+c->off);       \
+  c->off += 4; 					\
   _w4;                                          \
 })
 
@@ -65,6 +78,7 @@
 #define MAX_TOKENS  5
 
 typedef int status_t;
+//#define status_t int;
 
 struct fuid {
   uint32_t len;
@@ -162,6 +176,25 @@ struct msg {
 };
 
 typedef struct msg msg_t;
+
+
+/*void message_dump(payload_t *pkt, int pkt_len);
+status_t send_payload(SSL *ssl, payload_t *pkt, unsigned int pkt_len);
+status_t receive_payload(SSL *ssl, msg_t *msg);
+status_t send_get_request(SSL *ssl, msg_t *msg);
+status_t send_get_resp(SSL *ssl, msg_t *msg);
+status_t parse_get_req(payload_t *pkt, msg_t *msg);
+status_t parse_get_resp(payload_t *pkt, msg_t *msg);
+status_t send_put_request(SSL *ssl, msg_t *msg);
+status_t send_put_resp(SSL *ssl, msg_t *msg);
+status_t parse_put_req(payload_t *pkt, msg_t *msg);
+status_t parse_put_resp(payload_t *pkt, msg_t *msg);
+status_t send_auth_request(SSL *ssl, msg_t *msg);
+status_t send_auth_resp(SSL *ssl, msg_t *msg);
+status_t parse_auth_req(payload_t *pkt, msg_t *msg);
+status_t parse_auth_resp(payload_t *pkt, msg_t *msg);
+status_t send_message(SSL *ssl, msg_t *msg);
+status_t recv_message(SSL *ssl, msg_t *msg);*/
 
 
 #endif
