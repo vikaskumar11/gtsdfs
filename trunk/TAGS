@@ -1,0 +1,55 @@
+
+/home/vikas/scs-3/common.c,1027
+void _handle_error(const char *file, int lineno, const char *msg)_handle_error3,21
+void init_OpenSSL(void)init_OpenSSL10,196
+int verify_callback(int ok, X509_STORE_CTX *store)verify_callback20,397
+long post_connection_check(SSL *ssl, char *host)post_connection_check41,1086
+void seed_prng(void)seed_prng124,3766
+static MUTEX_TYPE *mutex_buf = NULL;mutex_buf131,3902
+static void locking_function(int mode, int n, const char * file, int line)locking_function133,3940
+static unsigned long id_function(void)id_function141,4119
+struct CRYPTO_dynlock_valueCRYPTO_dynlock_value146,4203
+     MUTEX_TYPE mutex;mutex148,4233
+static struct CRYPTO_dynlock_value * dyn_create_function(const char *file,dyn_create_function151,4260
+static void dyn_lock_function(int mode, struct CRYPTO_dynlock_value *l,dyn_lock_function163,4580
+static void dyn_destroy_function(struct CRYPTO_dynlock_value *l,dyn_destroy_function172,4785
+int THREAD_setup(void)THREAD_setup179,4932
+int THREAD_cleanup(void)THREAD_cleanup195,5462
+
+/home/vikas/scs-3/common.h,481
+#define COMMON_HCOMMON_H2,17
+#define THREAD_TYPE THREAD_TYPE14,227
+#define THREAD_CREATE(THREAD_CREATE15,276
+#define MUTEX_TYPE MUTEX_TYPE17,416
+#define MUTEX_SETUP(MUTEX_SETUP18,451
+#define MUTEX_CLEANUP(MUTEX_CLEANUP19,505
+#define MUTEX_LOCK(MUTEX_LOCK20,558
+#define MUTEX_UNLOCK(MUTEX_UNLOCK21,605
+#define THREAD_ID THREAD_ID22,656
+#define PORT PORT24,691
+#define SERVER SERVER25,723
+#define CLIENT CLIENT26,759
+#define handle_error(handle_error28,796
+
+/home/vikas/scs-3/client.c,279
+#define CIPHER_LIST CIPHER_LIST3,22
+#define CAFILE CAFILE4,78
+#define CADIR CADIR5,108
+#define CERTFILE CERTFILE6,127
+SSL_CTX *setup_client_ctx(void)setup_client_ctx7,157
+int do_client_loop(SSL *ssl)do_client_loop28,1070
+int main(int argc, char *argv[])main47,1468
+
+/home/vikas/scs-3/server.c,531
+DH *dh512 = NULL;dh5123,22
+DH *dh1024 = NULL;dh10244,40
+void init_dhparams(void)init_dhparams6,60
+DH *tmp_dh_callback(SSL *ssl, int is_export, int keylength)tmp_dh_callback27,653
+#define CIPHER_LIST CIPHER_LIST47,1039
+#define CAFILE CAFILE48,1095
+#define CADIR CADIR49,1125
+#define CERTFILE CERTFILE50,1144
+SSL_CTX *setup_server_ctx(void)setup_server_ctx51,1174
+int do_server_loop(SSL *ssl)do_server_loop75,2251
+void server_thread(void *arg)server_thread94,2669
+int main(int argc, char *argv[])main119,3356
