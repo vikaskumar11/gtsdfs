@@ -156,10 +156,6 @@ status_t handle_put_req(msg_t *req, msg_t *resp) {
 
 status_t handle_server_message(SSL *ssl, msg_t *req, msg_t *resp) {
 
-  if(STATUS_FAILURE == recv_message(ssl, req)) {
-    return STATUS_FAILURE;
-  }
-
   switch(req->hdr.type) {
     case REQ_AUTH:
       resp->hdr.type = RSP_AUTH;
@@ -171,7 +167,7 @@ status_t handle_server_message(SSL *ssl, msg_t *req, msg_t *resp) {
       break;
     case REQ_PUT:
       resp->hdr.type = RSP_PUT;
-      handle_get_req(req, resp);
+      handle_put_req(req, resp);
       break;
 
   }
@@ -215,7 +211,7 @@ int do_server_loop(SSL *ssl)
       memset(&req, 0, sizeof(msg_t));
       memset(&resp, 0, sizeof(msg_t));
 
-      if(STATUS_FAILURE == receive_payload(ssl, &req)) {
+      if(STATUS_FAILURE == recv_message(ssl, &req)) {
         perror("Socket Error: Thread returning\n");
         break;
       }
