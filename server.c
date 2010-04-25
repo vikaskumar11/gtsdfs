@@ -1,4 +1,5 @@
 #include "common.h"
+#include "msg.c"
  
 #define FTPD "./ftpd/"
 
@@ -75,7 +76,8 @@ SSL_CTX *setup_server_ctx(void)
 }
 
 status_t handle_auth_req(msg_t *req, msg_t *resp) {
-  resp->status = STATUS_SUCCESS;
+
+  resp->u.auth_resp.status = STATUS_SUCCESS;
 
   return STATUS_SUCCESS;
 }
@@ -98,7 +100,7 @@ status_t handle_get_req(msg_t *req, msg_t *resp) {
     return STATUS_FAILURE;
   }
 
-  fd = fopen(filename, O_RDONLY);
+  fd = open(filename, O_RDONLY);
 
   if(fd <= 0) {
     printf("get: Unable to open files %s\n", filename);
@@ -123,8 +125,6 @@ status_t handle_get_req(msg_t *req, msg_t *resp) {
 
 status_t handle_put_req(msg_t *req, msg_t *resp) {
   char *filename;
-  struct stat stat_buf;
-  char *file_data = NULL;
   int fd;
 
   resp->u.put_resp.status = STATUS_FAILURE;
@@ -154,9 +154,9 @@ status_t handle_put_req(msg_t *req, msg_t *resp) {
   return STATUS_SUCCESS;
 }
 
-status_t handle_server_message(msg_t *req, msg_t *resp) {
+status_t handle_server_message(SSL *ssl, msg_t *req, msg_t *resp) {
 
-  if(STATUS_FAILURE == receive_message(ssl, req)) {
+  if(STATUS_FAILURE == recv_message(ssl, req)) {
     return STATUS_FAILURE;
   }
 
@@ -208,6 +208,8 @@ int do_server_loop(SSL *ssl)
 {
     msg_t req, resp;
 
+    printf("do_server_loop\n");
+
     do
     {
       memset(&req, 0, sizeof(msg_t));
@@ -218,13 +220,13 @@ int do_server_loop(SSL *ssl)
         break;
       }
 
-      handle_server_message(&req, &resp);
-      send_message(&resp);
+      handle_server_message(ssl, &req, &resp);
+      send_message(ssl, &resp);
 
       free_message(&req);
       free_message(&resp);
-      free(req->pkt->buf);
-      free(req->pkt);
+      free(req.pkt->buf);
+      free(req.pkt);
     }
     while (1);
     return (SSL_get_shutdown(ssl) & SSL_RECEIVED_SHUTDOWN) ? 1 : 0;
