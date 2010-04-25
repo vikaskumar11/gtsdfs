@@ -8,7 +8,6 @@ void message_dump(payload_t *pkt, int pkt_len) {
  
      if(lim == 0) lim = 1;
 
-     printf("\nSending Message >> \n");
      for (count = 0; count < lim; count++)
      {
 	  printf("  0x%04x: 0x%08x\n",
@@ -53,6 +52,7 @@ status_t send_payload(SSL *ssl, payload_t *pkt, unsigned int pkt_len) {
 	  }
      }
 
+     printf("\nSending Message >> \n");
      message_dump(pkt, pkt_len);
      return STATUS_SUCCESS;
 
@@ -205,6 +205,7 @@ status_t send_get_resp(SSL *ssl, msg_t *msg) {
      msg->hdr.tot_len = MSG_HDR_SIZE + GET_RSP_SIZE;
      msg->hdr.tot_len += msg->u.get_resp.filelen;
 
+     memset(pkt, 0, sizeof(payload_t));
      payload.buf = malloc(msg->hdr.tot_len);
 
      if(payload.buf == NULL)
@@ -247,6 +248,7 @@ status_t parse_get_req(payload_t *pkt, msg_t *msg) {
 	  return STATUS_FAILURE;
 
      POP(pkt, msg->u.get_req.filename, msg->u.get_req.filename_len);
+     msg->u.get_req.filename[msg->u.get_req.filename_len] = '\0';
 
      if(msg->u.get_req.del_req) {
 	  int cnt = 0, last_tok = 0;
@@ -318,6 +320,7 @@ status_t send_put_request(SSL *ssl, msg_t *msg) {
 	  }
      }
 
+     memset(pkt, 0, sizeof(payload_t));
      payload.buf = malloc(msg->hdr.tot_len);
 
      if(payload.buf == NULL)
@@ -373,6 +376,7 @@ status_t send_put_resp(SSL *ssl, msg_t *msg) {
      msg->hdr.type = RSP_PUT;
      msg->hdr.tot_len = MSG_HDR_SIZE + PUT_RSP_SIZE;
 
+     memset(pkt, 0, sizeof(payload_t));
      payload.buf = malloc(msg->hdr.tot_len);
 
      if(payload.buf == NULL)
@@ -408,6 +412,7 @@ status_t parse_put_req(payload_t *pkt, msg_t *msg) {
 	  return STATUS_FAILURE;
 
      POP(pkt, msg->u.put_req.filename, msg->u.put_req.filename_len);
+     msg->u.put_req.filename[msg->u.put_req.filename_len] = '\0';
 
      if(msg->u.put_req.del_req) {
 	  int cnt = 0, last_tok = 0;
@@ -415,6 +420,7 @@ status_t parse_put_req(payload_t *pkt, msg_t *msg) {
 	  while(!last_tok) {
 	       msg->u.put_req.tok_info[cnt].uid.len = ntohl(pop4(pkt));
 	       msg->u.put_req.tok_info[cnt].uid.id = malloc(msg->u.put_req.tok_info[cnt].uid.len);
+	       msg->u.put_req.tok_info[cnt].uid.id[msg->u.put_req.tok_info[cnt].uid.len] = '\0';
 
 	       if(msg->u.put_req.tok_info[cnt].uid.id == NULL)
 		    return STATUS_FAILURE;
@@ -466,6 +472,7 @@ status_t send_auth_request(SSL *ssl, msg_t *msg) {
      msg->hdr.tot_len = MSG_HDR_SIZE + AUTH_REQ_SIZE;
      msg->hdr.tot_len += msg->u.auth_req.uid.len;
 
+     memset(pkt, 0, sizeof(payload_t));
      payload.buf = malloc(msg->hdr.tot_len);
 
      if(payload.buf == NULL)
@@ -497,6 +504,7 @@ status_t send_auth_resp(SSL *ssl, msg_t *msg) {
      msg->hdr.type = RSP_GET;
      msg->hdr.tot_len = MSG_HDR_SIZE + AUTH_RSP_SIZE;
 
+     memset(pkt, 0, sizeof(payload_t));
      payload.buf = malloc(msg->hdr.tot_len);
 
      if(payload.buf == NULL)

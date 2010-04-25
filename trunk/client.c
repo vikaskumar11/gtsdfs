@@ -102,11 +102,6 @@ int get(SSL *ssl, char *fname, char *uid)
 	  perror("send req failed\n");
 	  return 0;
      }
-     if(STATUS_FAILURE == receive_payload(ssl, &resp)) 
-     {
-	  perror("recv resp failed\n");
-	  return 0;
-     }
 
      return handle_client_message(ssl, &req, &resp);
 }
@@ -147,11 +142,6 @@ int put(SSL *ssl, char *fname, char *uid)
      if(STATUS_FAILURE == send_message(ssl, &req))
      {
 	  perror("send req failed\n");
-	  return 0;
-     }
-     if(STATUS_FAILURE == receive_payload(ssl, &res)) 
-     {
-	  perror("recv resp failed\n");
 	  return 0;
      }
 
