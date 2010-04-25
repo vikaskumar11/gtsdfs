@@ -1,0 +1,77 @@
+gcc -g -Wall -pthread -c client.c -o client.o
+In file included from client.c:2:
+msg.c: In function œôòøsend_payloadœôòù:
+msg.c:64: warning: implicit declaration of function œôòødump_messageœôòù
+msg.c: In function œôòøsend_messageœôòù:
+msg.c:141: warning: implicit declaration of function œôòøsend_get_requestœôòù
+msg.c:144: warning: implicit declaration of function œôòøsend_put_requestœôòù
+msg.c:147: warning: implicit declaration of function œôòøsend_auth_requestœôòù
+msg.c:150: warning: implicit declaration of function œôòøsend_get_respœôòù
+msg.c:153: warning: implicit declaration of function œôòøsend_put_respœôòù
+msg.c:156: warning: implicit declaration of function œôòøsend_auth_respœôòù
+msg.c: In function œôòørecv_messageœôòù:
+msg.c:174: warning: implicit declaration of function œôòøparse_get_requestœôòù
+msg.c:177: warning: implicit declaration of function œôòøparse_put_requestœôòù
+msg.c:180: warning: implicit declaration of function œôòøparse_auth_requestœôòù
+msg.c:183: warning: implicit declaration of function œôòøparse_get_respœôòù
+msg.c:186: warning: implicit declaration of function œôòøparse_put_respœôòù
+msg.c:189: warning: implicit declaration of function œôòøparse_auth_respœôòù
+client.c: In function œôòøhandle_get_respœôòù:
+client.c:34: error: œôòømsg_tœôòù has no member named œôòøstatusœôòù
+client.c:37: error: œôòømsg_tœôòù has no member named œôòøfilenameœôòù
+client.c:37: warning: assignment makes integer from pointer without a cast
+client.c:38: warning: comparison between pointer and integer
+client.c:44: error: œôòømsg_tœôòù has no member named œôòøfilelenœôòù
+client.c:44: error: œôòømsg_tœôòù has no member named œôòødataœôòù
+client.c:44: error: œôòømsg_tœôòù has no member named œôòøfilelenœôòù
+client.c:44: warning: passing argument 4 of œôòøfwriteœôòù makes pointer from integer without a cast
+client.c:50: warning: implicit declaration of function œôòøfclosedœôòù
+client.c: In function œôòøhandle_put_respœôòù:
+client.c:57: error: œôòømsg_tœôòù has no member named œôòøstatusœôòù
+client.c: In function œôòøhandle_client_messageœôòù:
+client.c:66: warning: implicit declaration of function œôòøreceive_messageœôòù
+client.c:66: error: œôòøsslœôòù undeclared (first use in this function)
+client.c:66: error: (Each undeclared identifier is reported only once
+client.c:66: error: for each function it appears in.)
+client.c:70: error: œôòøresœôòù undeclared (first use in this function)
+client.c:71: error: œôòøRES_AUTHœôòù undeclared (first use in this function)
+client.c:75: error: œôòøRES_GETœôòù undeclared (first use in this function)
+client.c:76: warning: implicit declaration of function œôòøhandle_get_resœôòù
+client.c:78: error: œôòøRES_PUTœôòù undeclared (first use in this function)
+client.c:79: warning: implicit declaration of function œôòøhandle_put_resœôòù
+client.c: In function œôòøgetœôòù:
+client.c:95: error: œôòømsg_tœôòù has no member named œôòøget_reqœôòù
+client.c:96: error: œôòømsg_tœôòù has no member named œôòøget_reqœôòù
+client.c:97: error: œôòømsg_tœôòù has no member named œôòøget_reqœôòù
+client.c:99: error: incompatible type for argument 2 of œôòøsend_messageœôòù
+client.c:104: error: œôòøresœôòù undeclared (first use in this function)
+client.c:89: warning: unused variable œôòøretœôòù
+client.c:111: warning: control reaches end of non-void function
+client.c: In function œôòøputœôòù:
+client.c:116: error: storage size of œôòøbufferœôòù isnœôòùt known
+client.c:122: error: œôòørespœôòù undeclared (first use in this function)
+client.c:124: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:125: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:126: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:127: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:130: warning: implicit declaration of function œôòøopenœôòù
+client.c:130: error: œôòøO_RDWRœôòù undeclared (first use in this function)
+client.c:131: warning: implicit declaration of function œôòøfstatœôòù
+client.c:137: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:139: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:140: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:142: error: œôòømsg_tœôòù has no member named œôòøput_reqœôòù
+client.c:147: error: incompatible type for argument 2 of œôòøsend_messageœôòù
+client.c:117: warning: unused variable œôòøstatusœôòù
+client.c:116: warning: unused variable œôòøbufferœôòù
+client.c:159: warning: control reaches end of non-void function
+client.c: In function œôòøopen_connectionœôòù:
+client.c:227: warning: control reaches end of non-void function
+client.c: In function œôòøclose_connectionœôòù:
+client.c:233: warning: control reaches end of non-void function
+client.c: In function œôòødelegateœôòù:
+client.c:260: warning: control reaches end of non-void function
+client.c: In function œôòømainœôòù:
+client.c:278: error: too many arguments to function œôòødelegateœôòù
+client.c:279: warning: control reaches end of non-void function
+make: *** [client.o] Error 1
