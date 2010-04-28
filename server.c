@@ -14,7 +14,7 @@ struct file_meta {
 typedef struct file_meta file_meta_t;
 
 #define FTPD "./ftpd/"
-#define FILE_META_SIZE (4+RSA_PUB_SIZE+strlen(session_owner))
+#define FILE_META_SIZE (4+RSA_PUB_SIZE+strlen(owner))
 
 DH *dh512 = NULL;
 DH *dh1024 = NULL;
@@ -88,14 +88,14 @@ SSL_CTX *setup_server_ctx(void)
     return ctx;
 }
 
-status_t handle_auth_req(msg_t *req, msg_t *resp) {
+status_t handle_auth_req(char *owner, msg_t *req, msg_t *resp) {
 
   resp->u.auth_resp.status = STATUS_SUCCESS;
 
   return STATUS_SUCCESS;
 }
 
-status_t handle_get_req(msg_t *req, msg_t *resp) {
+status_t handle_get_req(char *owner, msg_t *req, msg_t *resp) {
   char *filename, *plaintext;
   struct stat stat_buf;
   char *file_data = NULL, *meta_data = NULL;
@@ -141,9 +141,9 @@ status_t handle_get_req(msg_t *req, msg_t *resp) {
   file_meta.owner[file_meta.owner_len] = '\0';
   idx += file_meta.owner_len;
 
-  if(strcmp(file_meta.owner, session_owner)) {
+  if(strcmp(file_meta.owner, owner)) {
     printf("User %s trying to access file owned by %s. Denied\n",
-		    session_owner, file_meta.owner);
+		        owner, file_meta.owner);
     goto fail;
   }
 
@@ -205,19 +205,64 @@ fail:
   return STATUS_FAILURE;
 }
 
-status_t handle_put_req(msg_t *req, msg_t *resp) {
+status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
   char *filename, *metadata;
   char key[64];
   char *iv = key + 32;
   char *enc_file = NULL, *enc_key;
-  int fd, len = 0, idx = 0;
+  int fd, len = 0, idx = 0, file_len = 0;
+  struct stat stat_buf;
+
 
   resp->u.put_resp.status = STATUS_FAILURE;
 
-  filename = malloc(strlen(FTPD) + req->u.put_req.filename_len + 6);
+  file_len = strlen(FTPD) + req->u.put_req.filename_len;
+  filename = malloc(file_len + 6);
 
   strcpy(filename, FTPD);
   strcat(filename, req->u.put_req.filename);
+  strcat(filename, ".m");
+
+  if(stat(filename, &stat_buf)) {
+    char tmpbuf[128];
+    uint32_t owner_len = 0;
+
+    fd = open(filename, O_RDONLY);
+    if(fd <= 0) {
+      printf("get: Unable to open files %s\n", filename);
+      free(filename);
+      return STATUS_FAILURE;
+    }
+
+    if(read(fd, tmpbuf, 4) != 4) {
+      perror("put: Error reading from file\n");
+      return STATUS_FAILURE;
+    }
+
+    owner_len = *(uint32_t *)(tmpbuf);
+    if(owner_len > 128) {
+      perror("Owner length too long in meta file\n");
+      return STATUS_FAILURE;
+    }
+  
+    if(read(fd, tmpbuf, owner_len) != owner_len) {
+      perror("put: Error reading from file\n");
+      return STATUS_FAILURE;
+    }
+
+    tmpbuf[owner_len] = '\0';
+
+    if(strcmp(tmpbuf, owner)) {
+      printf("User %s trying to overwrite file owned by %s. Denied\n",
+          owner, tmpbuf);
+      free(filename);
+      return STATUS_FAILURE;
+    }
+
+    close(fd);
+
+    filename[file_len] = '\0';
+  }
 
   aes_init((unsigned char *)req->u.put_req.data, req->u.put_req.file_len, (unsigned char *)key, (unsigned char *)iv);
   aes_enc_init((unsigned char *)key, (unsigned char *)iv);
@@ -258,12 +303,12 @@ status_t handle_put_req(msg_t *req, msg_t *resp) {
   metadata = malloc(FILE_META_SIZE);
 
   /* owner len*/
-  *((uint32_t *) metadata) = strlen(session_owner);
+  *((uint32_t *) metadata) = strlen(owner);
   idx += 4;
 
   /*owner*/
-  memcpy(metadata+idx, session_owner, strlen(session_owner));
-  idx += strlen(session_owner);
+  memcpy(metadata+idx, owner, strlen(owner));
+  idx += strlen(owner);
 
   /* encrypted key */
   memcpy(metadata+idx, enc_key, RSA_PUB_SIZE);
@@ -288,20 +333,20 @@ status_t handle_put_req(msg_t *req, msg_t *resp) {
   return STATUS_SUCCESS;
 }
 
-status_t handle_server_message(SSL *ssl, msg_t *req, msg_t *resp) {
+status_t handle_server_message(SSL *ssl, char *owner, msg_t *req, msg_t *resp) {
 
   switch(req->hdr.type) {
     case REQ_AUTH:
       resp->hdr.type = RSP_AUTH;
-      handle_auth_req(req, resp);
+      handle_auth_req(owner, req, resp);
       break;
     case REQ_GET:
       resp->hdr.type = RSP_GET;
-      handle_get_req(req, resp);
+      handle_get_req(owner, req, resp);
       break;
     case REQ_PUT:
       resp->hdr.type = RSP_PUT;
-      handle_put_req(req, resp);
+      handle_put_req(owner, req, resp);
       break;
 
   }
@@ -334,7 +379,7 @@ void free_message(msg_t *msg) {
   return;
 }
 
-int do_server_loop(SSL *ssl)
+int do_server_loop(SSL *ssl, char *owner)
 {
     msg_t req, resp;
 
@@ -350,7 +395,7 @@ int do_server_loop(SSL *ssl)
         break;
       }
 
-      handle_server_message(ssl, &req, &resp);
+      handle_server_message(ssl, owner, &req, &resp);
       send_message(ssl, &resp);
 
       free_message(&req);
@@ -365,10 +410,17 @@ int do_server_loop(SSL *ssl)
 void server_thread(void *arg)
 {
     SSL *ssl = (SSL *)arg;
+    char *owner;
     long err;
  
     pthread_detach(pthread_self());
 
+    owner = (char *) malloc(128);
+
+    if(owner == NULL)
+      handle_error("Unable to allocate memory\n");
+
+    session_owner = owner;
     if (SSL_accept(ssl) <= 0)
         handle_error("Error accepting SSL connection");
     if ((err = post_connection_check(ssl, CLIENT)) != X509_V_OK)
@@ -377,8 +429,9 @@ void server_thread(void *arg)
                 X509_verify_cert_error_string(err));
         handle_error("Error checking SSL object after connection");
     }
+    session_owner = NULL;
     fprintf(stderr, "SSL Connection opened\n");
-    if (do_server_loop(ssl))
+    if (do_server_loop(ssl, owner))
         SSL_shutdown(ssl);
     else
         SSL_clear(ssl);

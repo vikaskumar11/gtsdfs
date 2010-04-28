@@ -1,4 +1,5 @@
 #include "common.h"
+char *session_owner;
 
 void _handle_error(const char *file, int lineno, const char *msg)
 {
