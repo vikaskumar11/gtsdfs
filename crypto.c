@@ -4,14 +4,9 @@
 #include <openssl/pem.h>
 #include <string.h>
 
-#define SERVER_CERT "rootcert.pem"
+#define SERVER_CERT "server.pem"
 #define RSA_PUB_SIZE RSA_size(crypto_ctx.pub_key)
 #define RSA_PRIV_SIZE RSA_size(crypto_ctx.priv_key)
-
-#define STATUS_SUCCESS 0
-#define STATUS_FAILURE 1
-
-typedef int status_t;
 
 struct server_enc_ctx {
   EVP_CIPHER_CTX aes_ctx;
@@ -22,7 +17,7 @@ struct server_enc_ctx {
 
 typedef struct server_enc_ctx server_enc_ctx_t;
 
-int aes_init(unsigned char *key_data, int key_data_len, char *key_out, char *iv_out)
+int aes_init(unsigned char *key_data, int key_data_len, unsigned char *key_out, unsigned char *iv_out)
 {
   int i, nrounds = 5;
   //unsigned char key[32], iv[32];
@@ -36,12 +31,12 @@ int aes_init(unsigned char *key_data, int key_data_len, char *key_out, char *iv_
   return 0;
 }
 
-void aes_enc_init(char *key, char *iv) {
+void aes_enc_init(unsigned char *key, unsigned char *iv) {
   EVP_CIPHER_CTX_init(&crypto_ctx.aes_ctx);
   EVP_EncryptInit_ex(&crypto_ctx.aes_ctx, EVP_aes_256_cbc(), NULL, key, iv);
 }
 
-void aes_dec_init(char *key, char *iv) {
+void aes_dec_init(unsigned char *key, unsigned char *iv) {
   EVP_CIPHER_CTX_init(&crypto_ctx.aes_ctx);
   EVP_DecryptInit_ex(&crypto_ctx.aes_ctx, EVP_aes_256_cbc(), NULL, key, iv);
 }
@@ -109,7 +104,7 @@ status_t server_crypto_init() {
     return STATUS_FAILURE;
   }
 
-  fp = fopen("serverkey.pem", "rb");
+  fp = fopen("testserv.pem", "rb");
   
   if(fp == NULL) {
    printf("cannot open file\n");
@@ -129,17 +124,42 @@ status_t server_crypto_init() {
 }
 
 int pub_encrypt(char *src, int len, char *dst) {
-  return (RSA_public_encrypt(len, (unsigned char *)src, dst, crypto_ctx.pub_key, RSA_PKCS1_PADDING));
+  return (RSA_public_encrypt(len, (unsigned char *)src, (unsigned char *)dst, crypto_ctx.pub_key, RSA_PKCS1_PADDING));
 }
 
 int priv_decrypt(char *src, int len, char *dst) {
-  return (RSA_private_decrypt(len, (unsigned char *)src, dst, crypto_ctx.priv_key, RSA_PKCS1_PADDING));
+  return (RSA_private_decrypt(len, (unsigned char *)src, (unsigned char *)dst, crypto_ctx.priv_key, RSA_PKCS1_PADDING));
 }
 
+#if 0
 int main() {
-  if(server_crypto_init() == STATUS_SUCCESS) {
+  char buf[32];
+  char key[32], iv[32];
+  char *dst;
+  int len = 32;
+  char *ciph;
+
+  /*(server_crypto_init() == STATUS_SUCCESS) {
     printf("RSA Size: %d\n", RSA_PUB_SIZE);
   }		    
 
+  dst = malloc(RSA_PUB_SIZE);
+  memset(dst, 0, 128);*/
+  memset(buf, 2, sizeof(buf));
+/*  printf("Encrypting data: %d\n", pub_encrypt(buf, 32, dst));
+
+  memset(buf, 0, sizeof(buf));
+  printf("Decrypting: %d\n", priv_decrypt(dst, RSA_PUB_SIZE, buf));
+  ERR_print_errors_fp(stderr);	  */
+
+  aes_init("venkat", 6, key, iv);
+  aes_enc_init(key, iv);
+  ciph = aes_encrypt(&crypto_ctx.aes_ctx, buf, &len);
+
+  aes_cleanup(&crypto_ctx.aes_ctx);
+  aes_dec_init(key, iv);
+  ciph = aes_decrypt(&crypto_ctx.aes_ctx, ciph, &len);
+
   return 0;
 }
+#endif

@@ -1,7 +1,20 @@
 #include "common.h"
 #include "msg.c"
- 
+#include "crypto.c"
+
+extern char *session_owner;
+
+struct file_meta {
+  uint32_t owner_len;
+  char *owner;
+  char *key;
+  char *iv;
+};
+
+typedef struct file_meta file_meta_t;
+
 #define FTPD "./ftpd/"
+#define FILE_META_SIZE (4+RSA_PUB_SIZE+strlen(session_owner))
 
 DH *dh512 = NULL;
 DH *dh1024 = NULL;
@@ -83,17 +96,22 @@ status_t handle_auth_req(msg_t *req, msg_t *resp) {
 }
 
 status_t handle_get_req(msg_t *req, msg_t *resp) {
-  char *filename;
+  char *filename, *plaintext;
   struct stat stat_buf;
-  char *file_data = NULL;
-  int fd;
+  char *file_data = NULL, *meta_data = NULL;
+  char enc_key[RSA_PUB_SIZE], sym_key[RSA_PUB_SIZE];
+  int fd, idx = 0, len = 0, flen = 0;
+  file_meta_t file_meta;
 
   resp->u.get_resp.status = STATUS_FAILURE;
+  memset(&file_meta, 0, sizeof(file_meta_t));
 
-  filename = malloc(strlen(FTPD) + req->u.get_req.filename_len + 1);
+  flen = strlen(FTPD) + req->u.get_req.filename_len;
+  filename = malloc(flen + 6);
 
   strcpy(filename, FTPD);
   strcat(filename, req->u.get_req.filename);
+  strcat(filename, ".m");
 
   if(stat(filename, &stat_buf)) {
     perror("get: Unable to stat file\n");
@@ -107,49 +125,165 @@ status_t handle_get_req(msg_t *req, msg_t *resp) {
     return STATUS_FAILURE;
   }
 
-  file_data = malloc(stat_buf.st_size);
-  if(read(fd, file_data, stat_buf.st_size) != stat_buf.st_size) {
+  meta_data = malloc(stat_buf.st_size);
+  if(read(fd, meta_data, stat_buf.st_size) != stat_buf.st_size) {
     perror("get: Error reading from file\n");
     return STATUS_FAILURE;
   }
 
-  resp->u.get_resp.filelen = stat_buf.st_size;
-  resp->u.get_resp.data = file_data;
-  resp->u.get_resp.status = STATUS_SUCCESS;
+  close(fd);
+
+  file_meta.owner_len = *((uint32_t *) meta_data);
+  idx += 4;
+
+  file_meta.owner = malloc(file_meta.owner_len+1);
+  memcpy(file_meta.owner, meta_data+idx, file_meta.owner_len);
+  file_meta.owner[file_meta.owner_len] = '\0';
+  idx += file_meta.owner_len;
+
+  if(strcmp(file_meta.owner, session_owner)) {
+    printf("User %s trying to access file owned by %s. Denied\n",
+		    session_owner, file_meta.owner);
+    goto fail;
+  }
+
+  memcpy(enc_key, meta_data+idx, RSA_PUB_SIZE);
+  if(priv_decrypt(enc_key, RSA_PUB_SIZE, sym_key) != 64) {
+    perror("get: RSA decrypt error\n");
+    goto fail; 
+
+  }
+
+  file_meta.key = sym_key;
+  file_meta.iv = sym_key + 32;
+
+  filename[flen] = '\0';
+  fd = open(filename, O_RDONLY);
+
+  memset(&stat_buf, 0, sizeof(stat_buf));
+  if(stat(filename, &stat_buf)) {
+    perror("get: Unable to stat file\n");
+    return STATUS_FAILURE;
+  }
+
+  if(fd <= 0) {
+    printf("get: Unable to open files %s\n", filename);
+    goto fail;
+  }
+
+  len = stat_buf.st_size;
+  file_data = malloc(len);
+  if(read(fd, file_data, len) != len) {
+    perror("get: Error reading from file\n");
+    free(file_data);
+    goto fail;
+  }
 
   close(fd);
+
+  aes_dec_init((unsigned char *)file_meta.key, (unsigned char *)file_meta.iv);
+    
+  plaintext = aes_decrypt(&crypto_ctx.aes_ctx, file_data, &len);
+
+  resp->u.get_resp.filelen = len;
+  resp->u.get_resp.data = plaintext;
+  resp->u.get_resp.status = STATUS_SUCCESS;
+
+  aes_cleanup(&crypto_ctx.aes_ctx);
   free(filename);
+  free(meta_data);
+  free(file_meta.owner);
+  free(file_data);
 
   return STATUS_SUCCESS;
+
+fail:
+  free(filename);
+  free(meta_data);
+  free(file_meta.owner);
+
+  return STATUS_FAILURE;
 }
 
 status_t handle_put_req(msg_t *req, msg_t *resp) {
-  char *filename;
-  int fd;
+  char *filename, *metadata;
+  char key[64];
+  char *iv = key + 32;
+  char *enc_file = NULL, *enc_key;
+  int fd, len = 0, idx = 0;
 
   resp->u.put_resp.status = STATUS_FAILURE;
 
-  filename = malloc(strlen(FTPD) + req->u.put_req.filename_len + 1);
+  filename = malloc(strlen(FTPD) + req->u.put_req.filename_len + 6);
 
   strcpy(filename, FTPD);
   strcat(filename, req->u.put_req.filename);
 
-  fd = open(filename, O_CREAT|O_WRONLY);
+  aes_init((unsigned char *)req->u.put_req.data, req->u.put_req.file_len, (unsigned char *)key, (unsigned char *)iv);
+  aes_enc_init((unsigned char *)key, (unsigned char *)iv);
+
+  len = req->u.put_req.file_len;
+  enc_file = aes_encrypt(&crypto_ctx.aes_ctx, req->u.put_req.data, &len);
+
+  enc_key = malloc(RSA_PUB_SIZE);
+  if(pub_encrypt(key, 64, enc_key) <= 0) {
+     aes_cleanup(&crypto_ctx.aes_ctx);
+     free(filename);
+     free(enc_file);
+     return STATUS_FAILURE;
+  }
+
+  fd = open(filename, O_CREAT|O_WRONLY, 0777);
 
   if(fd <= 0) {
     printf("put: Unable to open file %s\n", filename);
     return STATUS_FAILURE;
   }
 
-  if(write(fd, req->u.put_req.data, req->u.put_req.file_len) 
-      != req->u.put_req.file_len) {
+  if(write(fd, enc_file, len) != len) {
+    perror("put: Error writing to file\n");
+    return STATUS_FAILURE;
+  }
+
+  close(fd);
+
+  strcat(filename, ".m");
+  fd = open(filename, O_CREAT|O_WRONLY, 0777);
+
+  if(fd <= 0) {
+    printf("put: Unable to open file %s\n", filename);
+    return STATUS_FAILURE;
+  }
+
+  metadata = malloc(FILE_META_SIZE);
+
+  /* owner len*/
+  *((uint32_t *) metadata) = strlen(session_owner);
+  idx += 4;
+
+  /*owner*/
+  memcpy(metadata+idx, session_owner, strlen(session_owner));
+  idx += strlen(session_owner);
+
+  /* encrypted key */
+  memcpy(metadata+idx, enc_key, RSA_PUB_SIZE);
+  idx += RSA_PUB_SIZE;
+
+  assert(idx <= FILE_META_SIZE);
+
+  if(write(fd, metadata, idx) != idx) {
     perror("put: Error writing to file\n");
     return STATUS_FAILURE;
   }
 
   resp->u.put_resp.status = STATUS_SUCCESS;
+
   close(fd);
+  aes_cleanup(&crypto_ctx.aes_ctx); 
   free(filename);
+  free(enc_file);
+  free(metadata);
+  free(enc_key);
 
   return STATUS_SUCCESS;
 }
@@ -264,6 +398,10 @@ int main(int argc, char *argv[])
     seed_prng(  );
  
     ctx = setup_server_ctx(  );
+
+    if(server_crypto_init() != STATUS_SUCCESS) {
+       handle_error("Error initializing server RSA");       
+    }
  
     acc = BIO_new_accept(PORT);
     if (!acc)
