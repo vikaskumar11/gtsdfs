@@ -4,7 +4,8 @@
 #include <openssl/pem.h>
 #include <string.h>
 
-#define SERVER_CERT "server.pem"
+#define SERVER_CERT "servercert.pem"
+#define KEYFILE "serverkey.pem"
 #define RSA_PUB_SIZE RSA_size(crypto_ctx.pub_key)
 #define RSA_PRIV_SIZE RSA_size(crypto_ctx.priv_key)
 
@@ -104,7 +105,7 @@ status_t server_crypto_init() {
     return STATUS_FAILURE;
   }
 
-  fp = fopen("testserv.pem", "rb");
+  fp = fopen(KEYFILE, "rb");
   
   if(fp == NULL) {
    printf("cannot open file\n");
