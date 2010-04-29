@@ -339,7 +339,7 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
   return STATUS_SUCCESS;
 }
 
-#if 0
+
 status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
      char *filename;
   struct stat stat_buf;
@@ -407,8 +407,6 @@ status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
 
   
 }
-
-#endif
 
 status_t handle_server_message(SSL *ssl, char *owner, msg_t *req, msg_t *resp) {
 

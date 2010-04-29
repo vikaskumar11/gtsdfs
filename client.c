@@ -307,7 +307,6 @@ int main(int argc, char *argv[])
 	  fprintf(stderr, "usage: ./client start-session host port\n");
 	  exit(1);
      }
-
      if(0 == strcmp(argv[1], "start-session"))
 	  start_session(argv[2], argv[3]);
 
