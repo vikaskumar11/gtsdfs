@@ -9,6 +9,10 @@ struct file_meta {
   char *owner;
   char *key;
   char *iv;
+     uint32_t host_len;     
+     char *host;
+     uint32_t rights;
+     uint32_t delegate;
 };
 
 typedef struct file_meta file_meta_t;
@@ -63,7 +67,9 @@ DH *tmp_dh_callback(SSL *ssl, int is_export, int keylength)
 #define CIPHER_LIST "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
 #define CAFILE "rootcert.pem"
 #define CADIR NULL
-#define CERTFILE "server.pem"
+#define CERTFILE "servercert.pem"
+#define KEYFILE "serverkey.pem"
+
 SSL_CTX *setup_server_ctx(void)
 {
     SSL_CTX *ctx;
@@ -75,7 +81,7 @@ SSL_CTX *setup_server_ctx(void)
         handle_error("Error loading default CA file and/or directory");
     if (SSL_CTX_use_certificate_chain_file(ctx, CERTFILE) != 1)
         handle_error("Error loading certificate from file");
-    if (SSL_CTX_use_PrivateKey_file(ctx, CERTFILE, SSL_FILETYPE_PEM) != 1)
+    if (SSL_CTX_use_PrivateKey_file(ctx, KEYFILE, SSL_FILETYPE_PEM) != 1)
         handle_error("Error loading private key from file");
     SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
                        verify_callback);
@@ -223,7 +229,7 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
   strcat(filename, req->u.put_req.filename);
   strcat(filename, ".m");
 
-  if(stat(filename, &stat_buf)) {
+  if(!stat(filename, &stat_buf)) {
     char tmpbuf[128];
     uint32_t owner_len = 0;
 
@@ -260,9 +266,9 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
     }
 
     close(fd);
-
-    filename[file_len] = '\0';
   }
+
+  filename[file_len] = '\0';
 
   aes_init((unsigned char *)req->u.put_req.data, req->u.put_req.file_len, (unsigned char *)key, (unsigned char *)iv);
   aes_enc_init((unsigned char *)key, (unsigned char *)iv);
@@ -333,6 +339,77 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
   return STATUS_SUCCESS;
 }
 
+#if 0
+status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
+     char *filename;
+  struct stat stat_buf;
+  char *meta_data = NULL;
+  int fd, idx = 0, len = 0, flen = 0;
+  file_meta_t file_meta;
+
+  resp->u.delg_resp.status = STATUS_FAILURE;
+  memset(&file_meta, 0, sizeof(file_meta_t));
+
+  flen = strlen(FTPD) + req->u.get_req.filename_len;
+  filename = malloc(flen + 6);
+
+  strcpy(filename, FTPD);
+  strcat(filename, req->u.get_req.filename);
+  strcat(filename, ".m");
+
+  if(stat(filename, &stat_buf)) {
+    perror("get: Unable to stat file\n");
+    return STATUS_FAILURE;
+  }
+
+  fd = open(filename, O_RDONLY);
+
+  if(fd <= 0) {
+    printf("get: Unable to open files %s\n", filename);
+    return STATUS_FAILURE;
+  }
+
+  meta_data = malloc(stat_buf.st_size);
+  if(read(fd, meta_data, stat_buf.st_size) != stat_buf.st_size) {
+    perror("get: Error reading from file\n");
+    return STATUS_FAILURE;
+  }
+
+  close(fd);
+
+  file_meta.owner_len = *((uint32_t *) meta_data);
+  idx += 4;
+
+  file_meta.owner = malloc(file_meta.owner_len+1);
+  memcpy(file_meta.owner, meta_data+idx, file_meta.owner_len);
+  file_meta.owner[file_meta.owner_len] = '\0';
+  idx += file_meta.owner_len;
+
+  if(strcmp(file_meta.owner, owner)) {
+    printf("User %s trying to access file owned by %s. Denied\n",
+		        owner, file_meta.owner);
+    goto fail;
+  }
+
+/*venkant to reveiw*/
+  memcpy(enc_key, meta_data+idx, RSA_PUB_SIZE);
+  if(priv_decrypt(enc_key, RSA_PUB_SIZE, sym_key) != 64) {
+    perror("get: RSA decrypt error\n");
+    goto fail; 
+
+  }
+
+  file_meta.key = sym_key;
+  file_meta.iv = sym_key + 32;
+
+/*delegation code*/
+
+
+  
+}
+
+#endif
+
 status_t handle_server_message(SSL *ssl, char *owner, msg_t *req, msg_t *resp) {
 
   switch(req->hdr.type) {
@@ -348,7 +425,10 @@ status_t handle_server_message(SSL *ssl, char *owner, msg_t *req, msg_t *resp) {
       resp->hdr.type = RSP_PUT;
       handle_put_req(owner, req, resp);
       break;
-
+    case REQ_DELG:
+      resp->hdr.type = RSP_DELG;
+      //handle_delg_req(owner, req, resp);
+      break;
   }
 
   return STATUS_SUCCESS;

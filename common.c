@@ -1,5 +1,6 @@
 #include "common.h"
-char *session_owner;
+
+char *session_owner = NULL;
 
 void _handle_error(const char *file, int lineno, const char *msg)
 {
@@ -18,13 +19,31 @@ void init_OpenSSL(void)
     SSL_load_error_strings();
 }
 
+
+
 int verify_callback(int ok, X509_STORE_CTX *store)
 {
     char data[256];
  
+    X509 *cert = X509_STORE_CTX_get_current_cert(store);
+
+#if 0
+     /* create a verification context and initialize it */
+    if (!(verify_ctx = X509_STORE_CTX_new ()))
+	 handle_error ("Error creating X509_STORE_CTX object");
+    
+    if (X509_STORE_CTX_init (verify_ctx, store, cert, NULL) != 1)
+	 handle_error ("Error initializing verification context");
+
+     /* verify the certificate */
+    if (X509_verify_cert (verify_ctx) != 1)
+	 handle_error ("Error verifying the certificate");
+    else
+	 printf ("Certificate verified correctly!\n");
+#endif
+
     if (!ok)
-    {
-        X509 *cert = X509_STORE_CTX_get_current_cert(store);
+    {        
         int  depth = X509_STORE_CTX_get_error_depth(store);
         int  err = X509_STORE_CTX_get_error(store);
  
@@ -36,6 +55,10 @@ int verify_callback(int ok, X509_STORE_CTX *store)
         fprintf(stderr, "  err %i:%s\n", err, X509_verify_cert_error_string(err));
     }
  
+    X509_NAME_oneline(X509_get_subject_name(cert), data, 256);
+    strcpy(session_owner, data);
+    printf("Session Owner: %s\n", session_owner); 
+
     return ok;
 }
 

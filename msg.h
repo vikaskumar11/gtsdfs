@@ -65,6 +65,8 @@
 #define RSP_PUT   4
 #define REQ_AUTH  5
 #define RSP_AUTH  6
+#define REQ_DELG  7
+#define RSP_DELG  8
 
 #define MSG_HDR_SIZE 5
 #define GET_REQ_SIZE 5
@@ -75,10 +77,13 @@
 #define AUTH_RSP_SIZE 1
 #define TOKEN_SIZE   9
 
+#define DELG_GET 1
+#define DELG_PUT 2
+
 #define MAX_TOKENS  5
 
 typedef int status_t;
-//#define status_t int;
+
 
 struct fuid {
   uint32_t len;
@@ -151,6 +156,27 @@ struct put_resp {
 
 typedef struct put_resp put_resp_t;
 
+struct delg_req {
+  uint8_t del_req;
+  uint32_t filename_len;
+  char *filename;
+  uint32_t num_tokens;
+  token_info_t tok_info[MAX_TOKENS];
+  uint32_t rights;
+  uint32_t host_len;
+  uint32_t time;
+  char *host;
+  uint32_t propagate   ;
+};
+
+typedef struct delg_req delg_req_t;
+
+struct delg_resp {
+  uint8_t status;
+};
+
+typedef struct delg_resp delg_resp_t;
+
 struct payload {
   char *buf;
   unsigned int off;
@@ -170,6 +196,8 @@ struct msg {
     get_resp_t get_resp;
     put_req_t put_req;
     put_resp_t put_resp;
+    delg_req_t delg_req;
+    delg_resp_t delg_resp;   
   } u;
 
   payload_t *pkt;

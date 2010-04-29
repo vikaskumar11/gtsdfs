@@ -4,7 +4,8 @@
 #define CIPHER_LIST "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
 #define CAFILE "rootcert.pem"
 #define CADIR NULL
-#define CERTFILE "client.pem"
+#define CERTFILE "clientcert.pem"
+#define KEYFILE "clientkey.pem"
 
 SSL_CTX *setup_client_ctx(void)
 {
@@ -17,7 +18,7 @@ SSL_CTX *setup_client_ctx(void)
 	  handle_error("Error loading default CA file and/or directory");
      if (SSL_CTX_use_certificate_chain_file(ctx, CERTFILE) != 1)
 	  handle_error("Error loading certificate from file");
-     if (SSL_CTX_use_PrivateKey_file(ctx, CERTFILE, SSL_FILETYPE_PEM) != 1)
+     if (SSL_CTX_use_PrivateKey_file(ctx, KEYFILE, SSL_FILETYPE_PEM) != 1)
 	  handle_error("Error loading private key from file");
      SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verify_callback);
      SSL_CTX_set_verify_depth(ctx, 4);
@@ -60,6 +61,13 @@ status_t handle_put_resp( msg_t *req, msg_t *resp) {
      return STATUS_SUCCESS;
 }
 
+status_t handle_delg_resp( msg_t *req, msg_t *resp) {
+     
+     if(STATUS_FAILURE == resp->u.delg_resp.status)
+	  return STATUS_FAILURE;
+
+     return STATUS_SUCCESS;
+}
 
 status_t handle_client_message(SSL *ssl, msg_t *req, msg_t *resp) {
 
@@ -78,6 +86,10 @@ status_t handle_client_message(SSL *ssl, msg_t *req, msg_t *resp) {
      case RSP_PUT:
 	  handle_put_resp(req, resp);
 	  break;
+     case RSP_DELG:
+	  handle_delg_resp(req, resp);
+	  break;
+
      }
 
      return STATUS_SUCCESS;
@@ -148,15 +160,53 @@ int put(SSL *ssl, char *fname, char *uid)
      return handle_client_message(ssl, &req, &res);
 }
 
+int delegate(SSL *ssl, char *fname, char *uid, char *rights, char *host, char *time, char *propagate )
+{
+     msg_t req, res;
+
+     memset(&req, 0, sizeof(msg_t));
+     memset(&res, 0, sizeof(msg_t));
+     req.hdr.type = REQ_DELG;
+     req.u.delg_req.del_req = 0;
+     req.u.delg_req.filename = fname;
+     req.u.delg_req.filename_len = strlen(fname);
+     req.u.delg_req.num_tokens = 0;
+     
+     if(0 == strcmp(rights, "get"))
+	req.u.delg_req.rights = DELG_GET;
+     else if(0 == strcmp(rights, "put"))
+	  req.u.delg_req.rights = DELG_PUT;
+     if(0 == strcmp(rights, "both"))
+	req.u.delg_req.rights = DELG_GET | DELG_PUT;
+
+     req.u.delg_req.host_len = strlen(host);
+     req.u.delg_req.host = host;
+     req.u.delg_req.time = atoi(time);
+
+     if(0 == strcmp(propagate, "propagate"))
+	  req.u.delg_req.propagate = 1;
+     else
+	  req.u.delg_req.propagate = 0;
+
+     if(STATUS_FAILURE == send_message(ssl, &req))
+     {
+	  perror("send req failed\n");
+	  return 0;
+     }
+
+     return handle_client_message(ssl, &req, &res);
+}
+
 int do_client_loop(SSL *ssl)
 {
-     char buf[256];
-     char *op, *fname, *uid;
+     char buf[512];
+     char *op, *fname, *uid, *rights, *host, *time, *propogate;
      printf("do loop\n");
 
      fprintf(stdout, "possible commands:\n");
-     fprintf(stdout, "\tget <file name> <UID>\n");
-     fprintf(stdout, "\tput <file name> <UID>\n");
+     fprintf(stdout, "\tget <file_name>\n");
+     fprintf(stdout, "\tput <file_name>\n");
+     fprintf(stdout, "\tdelegate <file_name> <get/put/both> <host> <time> <propogate/not_propogate>\n");
      fprintf(stdout, "\tend-session\n");
      fflush(NULL);
 
@@ -164,12 +214,20 @@ int do_client_loop(SSL *ssl)
      {
 	  op = strtok(buf, " ");
 	  fname = strtok(NULL, " ");
-	  uid = strtok(NULL, " ");
+	  uid = "";
 	  
 	  if(0 == strcmp(buf, "get"))
 	       get(ssl, fname, uid);
 	  else if (0 == strcmp(buf, "put"))
 	       put(ssl, fname, uid);
+	  else if (0 == strcmp(buf, "delegate"))
+	  {
+	       rights = strtok(NULL, " ");
+	       host = strtok(NULL, " ");
+	       time = strtok(NULL, " ");
+	       propogate = strtok(NULL, " ");
+	       delegate(ssl, fname, uid, rights, host, time, propogate);
+	  }
 	  else if (0 == strcmp(buf, "end-session"))
 	       return 1;
 	  else
@@ -238,17 +296,6 @@ int start_session(char *server_addr, char *server_port)
      close_connection(ssl, ctx);
      return 0; 	
 }
-
-int delegate(char *server_addr, char *server_port, char *fname, char *uid, char *time)
-{
-     SSL *ssl;
-     SSL_CTX *ctx;
-
-     open_connection(&ssl, &ctx, server_addr, server_port);
-     /**/
-     close_connection(ssl, ctx);
-     return 0;
-}
  
 int main(int argc, char *argv[])
 {
@@ -258,16 +305,11 @@ int main(int argc, char *argv[])
      if(argc < 4) 
      {
 	  fprintf(stderr, "usage: ./client start-session host port\n");
-	  fprintf(stderr, "usage: ./client delegate host port file UID time\n");
-
 	  exit(1);
      }
-     //else if (0 != strcmp(argv[1], "start-session") || 0 != strcmp(argv[1], "delegate")))
 
      if(0 == strcmp(argv[1], "start-session"))
 	  start_session(argv[2], argv[3]);
-     else if(0 == strcmp(argv[1], "delegate"))
-	  delegate(argv[2], argv[3], argv[4], argv[5], argv[6]);
 
      return 0;
 }
