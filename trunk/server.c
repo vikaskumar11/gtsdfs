@@ -19,7 +19,7 @@ struct file_meta {
 typedef struct file_meta file_meta_t;
 
 #define FTPD "./ftpd/"
-#define FILE_META_SIZE (4+RSA_PUB_SIZE+strlen(owner))
+#define FILE_META_SIZE (4+RSA_PUB_SIZE+(is_delg_access?(strlen(file_owner)+acl_len):strlen(owner)))
 
 DH *dh512 = NULL;
 DH *dh1024 = NULL;
@@ -138,13 +138,15 @@ status_t is_delegated(char *filename, char *owner, int action)
 
   do 
   {
-       /*rt = fscanf(fp, "%d %s %d %d %d %d\n", &host_len, host, &rights, &t, &time, &propagate);
+       rt = fscanf(fp, "%d %s %d %d %d %d\n", &host_len, host, &rights, &t, &time, &propagate);
+       
        if(rt == EOF)
-	    break;*/
+	    break;
 
-       sscanf(meta_data+idx, "%d%s%d%d%d%d", &host_len, host, &rights, &t, &time, &propagate);
+       printf("rt=[%d] %s %d %d %d %d %d\n", rt, host, rights, action, t, time, propagate);
 
-       printf("%s %d %d %d %d\n", host, rights, t, time, propagate);
+       //sscanf(meta_data+idx, "%d%s%d%d%d%d", &host_len, host, &rights, &t, &time, &propagate);
+
        if(0 == strcmp(host, owner))
        {
 	    if((rights & action) == action)
@@ -152,15 +154,17 @@ status_t is_delegated(char *filename, char *owner, int action)
 		 gettimeofday(&t_now, NULL);
 		 t_delg.tv_sec = t;
 		 timersub(&t_now, &t_delg, &res);
-
-		 if(res.tv_sec <= time)
+                 printf("t_diff=[%d]\n", res.tv_sec); 
+		 if(res.tv_sec <= time) {
+		      printf("\tdelegated request granted\n");
+		      fclose(fp);
 		      return STATUS_SUCCESS;
+		 }
 	    }
        }
-
-       break;
   }while(1);
-  
+
+  printf("\tdelegated request not granted\n");
   fclose(fp);
 
   return STATUS_FAILURE;   
@@ -224,8 +228,7 @@ status_t handle_get_req(char *owner, msg_t *req, msg_t *resp) {
 		        owner, file_meta.owner);
 
       if(STATUS_FAILURE == is_delegated(filename, owner, DELG_GET))
-	   return STATUS_FAILURE;
-    goto fail;
+	   goto fail;
   }
 
   memcpy(enc_key, meta_data+idx, RSA_PUB_SIZE);
@@ -287,11 +290,13 @@ fail:
 }
 
 status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
-  char *filename, *metadata;
+  char *filename, *metadata, *file_owner = NULL;
+  char *file_acl = NULL;
   char key[64];
   char *iv = key + 32;
   char *enc_file = NULL, *enc_key;
   int fd, len = 0, idx = 0, file_len = 0;
+  int acl_len = 0, is_delg_access = 0;
   struct stat stat_buf;
 
 
@@ -305,7 +310,7 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
   strcat(filename, ".m");
 
   if(!stat(filename, &stat_buf)) {
-    char tmpbuf[128];
+    char tmpbuf[4];
     uint32_t owner_len = 0;
 
     fd = open(filename, O_RDONLY);
@@ -326,24 +331,57 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
       return STATUS_FAILURE;
     }
   
-    if(read(fd, tmpbuf, owner_len) != owner_len) {
+
+    file_owner = malloc(owner_len+1);
+    if(read(fd, file_owner, owner_len) != owner_len) {
       perror("put: Error reading from file\n");
       return STATUS_FAILURE;
     }
 
-    tmpbuf[owner_len] = '\0';
+    file_owner[owner_len] = '\0';
 
-    if(strcmp(tmpbuf, owner)) {
+    close(fd);
+
+    if(strcmp(file_owner, owner)) {
+      int off = 0;
+
       printf("User %s trying to overwrite file owned by %s. Denied\n",
           owner, tmpbuf);
       if(STATUS_FAILURE == is_delegated(filename, owner, DELG_PUT))
       {
 	   free(filename);
+	   free(file_owner);
 	   return STATUS_FAILURE;
       }
-    }
+      
+      is_delg_access = 1;
 
-    close(fd);
+      fd = open(filename, O_RDONLY);
+      if(fd <= 0) {
+        printf("get: Unable to open files %s\n", filename);
+        free(filename);
+        return STATUS_FAILURE;	    
+      }
+
+      off = 4 + owner_len + RSA_PUB_SIZE;
+      lseek(fd, off, SEEK_SET);
+
+      acl_len = stat_buf.st_size - off;
+
+      if(acl_len) {
+        file_acl = malloc(acl_len);
+
+        if(read(fd, file_acl, acl_len) != acl_len) {
+	  perror("put: Error reading from file\n");
+	  free(filename);
+	  free(file_owner);
+	  free(file_acl);
+          return STATUS_FAILURE;
+        }
+      }
+
+      close(fd);
+    }
   }
 
   filename[file_len] = '\0';
@@ -391,12 +429,22 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
   idx += 4;
 
   /*owner*/
-  memcpy(metadata+idx, owner, strlen(owner));
-  idx += strlen(owner);
+  if(!is_delg_access) {
+    memcpy(metadata+idx, owner, strlen(owner));
+    idx += strlen(owner);
+  } else {
+    memcpy(metadata+idx, file_owner, strlen(file_owner));
+    idx += strlen(file_owner);
+  }
 
   /* encrypted key */
   memcpy(metadata+idx, enc_key, RSA_PUB_SIZE);
   idx += RSA_PUB_SIZE;
+
+  if(is_delg_access && acl_len) {
+    memcpy(metadata+idx, file_acl, acl_len);
+    idx += acl_len;
+  }
 
   assert(idx <= FILE_META_SIZE);
 
@@ -414,6 +462,12 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
   free(metadata);
   free(enc_key);
 
+  if(file_owner)
+   free(file_owner);
+
+  if(file_acl)
+   free(file_acl);
+
   return STATUS_SUCCESS;
 }
 
@@ -426,8 +480,7 @@ status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
   struct timeval t;
   int flen, fd, owner_len;
   char tmpbuf[128]= "";
-
-
+  
   resp->u.delg_resp.status = STATUS_FAILURE;
   memset(&file_meta, 0, sizeof(file_meta_t));
 
@@ -466,6 +519,8 @@ status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
       return STATUS_FAILURE;
     }
 
+    close(fd);
+
     tmpbuf[owner_len] = '\0';
 
     if(strcmp(tmpbuf, owner)) {
@@ -489,7 +544,9 @@ status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
   if(0 != gettimeofday(&t,NULL))
        perror("gettimeofday");
 
-  fprintf(fp, "%d%s%d%d%d%d", req->u.delg_req.host_len, req->u.delg_req.host, req->u.delg_req.rights, (int)t.tv_sec, req->u.delg_req.time, req->u.delg_req.propagate);
+  fprintf(fp, "%d %s %d %d %d %d\n", req->u.delg_req.host_len, req->u.delg_req.host, req->u.delg_req.rights, (int)t.tv_sec, req->u.delg_req.time, req->u.delg_req.propagate);
+
+  resp->u.delg_resp.status = STATUS_SUCCESS;
 
   fclose(fp);
 }
@@ -546,7 +603,7 @@ void free_message(msg_t *msg) {
 int do_server_loop(SSL *ssl, char *owner)
 {
     msg_t req, resp;
-
+    
     printf("do_server_loop\n");
 
     do
