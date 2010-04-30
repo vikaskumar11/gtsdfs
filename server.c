@@ -3,15 +3,16 @@
 #include "crypto.c"
 
 extern char *session_owner;
+extern int server;
 
 struct file_meta {
   uint32_t owner_len;
   char *owner;
   char *key;
   char *iv;
-     uint32_t host_len;     
+     uint8_t host_len;     
      char *host;
-     uint32_t rights;
+     uint8_t rights;
      uint32_t delegate;
 };
 
@@ -94,6 +95,77 @@ SSL_CTX *setup_server_ctx(void)
     return ctx;
 }
 
+status_t is_delegated(char *filename, char *owner, int action)
+{
+     FILE* fp = NULL;
+     struct stat stat_buf;
+     int idx = 0, rt, fd, rights, propagate, time, t, host_len;
+     struct timeval t_now, t_delg, res;
+     char * meta_data, host[512];
+
+     if(stat(filename, &stat_buf)) {
+	  perror("get: Unable to stat file\n");
+	  return STATUS_FAILURE;
+     }  
+     
+  fd = open(filename, O_RDONLY);
+
+  if(fd <= 0) {
+    printf("get: Unable to open files %s\n", filename);
+    return STATUS_FAILURE;
+  }
+
+  meta_data = malloc(stat_buf.st_size);
+  if(read(fd, meta_data, stat_buf.st_size) != stat_buf.st_size) {
+    perror("get: Error reading from file\n");
+    return STATUS_FAILURE;
+  }
+  close(fd);
+
+  idx += 4;
+  idx += *((uint32_t *) meta_data);
+  idx += RSA_PUB_SIZE;
+  free(meta_data);
+
+  fp = fopen(filename, "r");
+  if(NULL == fp)
+  {
+       perror("fopen");
+       return STATUS_FAILURE;
+  }
+  
+  fseek(fp, idx, SEEK_SET);
+
+  do 
+  {
+       /*rt = fscanf(fp, "%d %s %d %d %d %d\n", &host_len, host, &rights, &t, &time, &propagate);
+       if(rt == EOF)
+	    break;*/
+
+       sscanf(meta_data+idx, "%d%s%d%d%d%d", &host_len, host, &rights, &t, &time, &propagate);
+
+       printf("%s %d %d %d %d\n", host, rights, t, time, propagate);
+       if(0 == strcmp(host, owner))
+       {
+	    if((rights & action) == action)
+	    {
+		 gettimeofday(&t_now, NULL);
+		 t_delg.tv_sec = t;
+		 timersub(&t_now, &t_delg, &res);
+
+		 if(res.tv_sec <= time)
+		      return STATUS_SUCCESS;
+	    }
+       }
+
+       break;
+  }while(1);
+  
+  fclose(fp);
+
+  return STATUS_FAILURE;   
+}
+
 status_t handle_auth_req(char *owner, msg_t *req, msg_t *resp) {
 
   resp->u.auth_resp.status = STATUS_SUCCESS;
@@ -150,6 +222,9 @@ status_t handle_get_req(char *owner, msg_t *req, msg_t *resp) {
   if(strcmp(file_meta.owner, owner)) {
     printf("User %s trying to access file owned by %s. Denied\n",
 		        owner, file_meta.owner);
+
+      if(STATUS_FAILURE == is_delegated(filename, owner, DELG_GET))
+	   return STATUS_FAILURE;
     goto fail;
   }
 
@@ -261,8 +336,11 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
     if(strcmp(tmpbuf, owner)) {
       printf("User %s trying to overwrite file owned by %s. Denied\n",
           owner, tmpbuf);
-      free(filename);
-      return STATUS_FAILURE;
+      if(STATUS_FAILURE == is_delegated(filename, owner, DELG_PUT))
+      {
+	   free(filename);
+	   return STATUS_FAILURE;
+      }
     }
 
     close(fd);
@@ -341,16 +419,19 @@ status_t handle_put_req(char *owner, msg_t *req, msg_t *resp) {
 
 
 status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
-     char *filename;
+  char *filename;
   struct stat stat_buf;
-  char *meta_data = NULL;
-  int fd, idx = 0, len = 0, flen = 0;
   file_meta_t file_meta;
+  FILE *fp = NULL;
+  struct timeval t;
+  int flen, fd, owner_len;
+  char tmpbuf[128]= "";
+
 
   resp->u.delg_resp.status = STATUS_FAILURE;
   memset(&file_meta, 0, sizeof(file_meta_t));
 
-  flen = strlen(FTPD) + req->u.get_req.filename_len;
+  flen = strlen(FTPD) + req->u.delg_req.filename_len;
   filename = malloc(flen + 6);
 
   strcpy(filename, FTPD);
@@ -362,50 +443,55 @@ status_t handle_delg_req(char *owner, msg_t *req, msg_t *resp) {
     return STATUS_FAILURE;
   }
 
-  fd = open(filename, O_RDONLY);
+    fd = open(filename, O_RDONLY);
+    if(fd <= 0) {
+      printf("get: Unable to open files %s\n", filename);
+      free(filename);
+      return STATUS_FAILURE;
+    }
 
-  if(fd <= 0) {
+    if(read(fd, tmpbuf, 4) != 4) {
+      perror("put: Error reading from file\n");
+      return STATUS_FAILURE;
+    }
+
+    owner_len = *(uint32_t *)(tmpbuf);
+    if(owner_len > 128) {
+      perror("Owner length too long in meta file\n");
+      return STATUS_FAILURE;
+    }
+  
+    if(read(fd, tmpbuf, owner_len) != owner_len) {
+      perror("put: Error reading from file\n");
+      return STATUS_FAILURE;
+    }
+
+    tmpbuf[owner_len] = '\0';
+
+    if(strcmp(tmpbuf, owner)) {
+      printf("User %s trying to delegate file owned by %s. Denied\n",
+          owner, tmpbuf);
+      if(STATUS_FAILURE == is_delegated(filename, owner, DELG_DELG | req->u.delg_req.rights))
+      {
+	   free(filename);
+	   return STATUS_FAILURE;
+      }
+    }
+
+  fp = fopen(filename, "a");
+
+  if(fp == NULL) {
     printf("get: Unable to open files %s\n", filename);
     return STATUS_FAILURE;
   }
 
-  meta_data = malloc(stat_buf.st_size);
-  if(read(fd, meta_data, stat_buf.st_size) != stat_buf.st_size) {
-    perror("get: Error reading from file\n");
-    return STATUS_FAILURE;
-  }
+  timerclear(&t);
+  if(0 != gettimeofday(&t,NULL))
+       perror("gettimeofday");
 
-  close(fd);
+  fprintf(fp, "%d%s%d%d%d%d", req->u.delg_req.host_len, req->u.delg_req.host, req->u.delg_req.rights, (int)t.tv_sec, req->u.delg_req.time, req->u.delg_req.propagate);
 
-  file_meta.owner_len = *((uint32_t *) meta_data);
-  idx += 4;
-
-  file_meta.owner = malloc(file_meta.owner_len+1);
-  memcpy(file_meta.owner, meta_data+idx, file_meta.owner_len);
-  file_meta.owner[file_meta.owner_len] = '\0';
-  idx += file_meta.owner_len;
-
-  if(strcmp(file_meta.owner, owner)) {
-    printf("User %s trying to access file owned by %s. Denied\n",
-		        owner, file_meta.owner);
-    goto fail;
-  }
-
-/*venkant to reveiw*/
-  memcpy(enc_key, meta_data+idx, RSA_PUB_SIZE);
-  if(priv_decrypt(enc_key, RSA_PUB_SIZE, sym_key) != 64) {
-    perror("get: RSA decrypt error\n");
-    goto fail; 
-
-  }
-
-  file_meta.key = sym_key;
-  file_meta.iv = sym_key + 32;
-
-/*delegation code*/
-
-
-  
+  fclose(fp);
 }
 
 status_t handle_server_message(SSL *ssl, char *owner, msg_t *req, msg_t *resp) {
@@ -425,7 +511,7 @@ status_t handle_server_message(SSL *ssl, char *owner, msg_t *req, msg_t *resp) {
       break;
     case REQ_DELG:
       resp->hdr.type = RSP_DELG;
-      //handle_delg_req(owner, req, resp);
+      handle_delg_req(owner, req, resp);
       break;
   }
 
@@ -527,7 +613,8 @@ int main(int argc, char *argv[])
 
     init_OpenSSL(  );
     seed_prng(  );
- 
+    server = 1;
+
     ctx = setup_server_ctx(  );
 
     if(server_crypto_init() != STATUS_SUCCESS) {

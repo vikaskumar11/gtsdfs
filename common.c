@@ -1,6 +1,7 @@
 #include "common.h"
 
 char *session_owner = NULL;
+int server = 0;
 
 void _handle_error(const char *file, int lineno, const char *msg)
 {
@@ -55,9 +56,12 @@ int verify_callback(int ok, X509_STORE_CTX *store)
         fprintf(stderr, "  err %i:%s\n", err, X509_verify_cert_error_string(err));
     }
  
-    X509_NAME_oneline(X509_get_subject_name(cert), data, 256);
-    strcpy(session_owner, data);
-    printf("Session Owner: %s\n", session_owner); 
+    if(server)
+    {
+	 X509_NAME_oneline(X509_get_subject_name(cert), data, 256);
+	 strcpy(session_owner, data);
+	 printf("Session Owner: %s\n", session_owner); 
+    }
 
     return ok;
 }

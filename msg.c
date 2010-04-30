@@ -722,6 +722,9 @@ status_t recv_message(SSL *ssl, msg_t *msg) {
      case REQ_AUTH:
 	  parse_auth_req(msg->pkt, msg);
 	  break;
+     case REQ_DELG:
+	  parse_delg_req(msg->pkt, msg);
+	  break;
      case RSP_GET:
 	  parse_get_resp(msg->pkt, msg);
 	  break;
