@@ -75,12 +75,13 @@
 #define PUT_RSP_SIZE 1
 #define AUTH_REQ_SIZE 4
 #define AUTH_RSP_SIZE 1
-#define DELG_REQ_SIZE 12
+#define DELG_REQ_SIZE 15
 #define DELG_RSP_SIZE 1
 #define TOKEN_SIZE   9
 
 #define DELG_GET 1
 #define DELG_PUT 2
+#define DELG_DELG 4
 
 #define MAX_TOKENS  5
 

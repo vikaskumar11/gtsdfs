@@ -13,7 +13,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-
+#include <sys/time.h>
 
 #define THREAD_TYPE                    pthread_t
 #define THREAD_CREATE(tid, entry, arg) pthread_create(&(tid), NULL, \

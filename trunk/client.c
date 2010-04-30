@@ -160,9 +160,10 @@ int put(SSL *ssl, char *fname, char *uid)
      return handle_client_message(ssl, &req, &res);
 }
 
-int delegate(SSL *ssl, char *fname, char *uid, char *rights, char *host, char *time, char *propagate )
+int delegate(SSL *ssl, char *fname, char *uid, char *rights, char *host, char *time, char *prop )
 {
      msg_t req, res;
+     int propagate;
 
      memset(&req, 0, sizeof(msg_t));
      memset(&res, 0, sizeof(msg_t));
@@ -171,22 +172,23 @@ int delegate(SSL *ssl, char *fname, char *uid, char *rights, char *host, char *t
      req.u.delg_req.filename = fname;
      req.u.delg_req.filename_len = strlen(fname);
      req.u.delg_req.num_tokens = 0;
+
+     if(0 == strcmp(prop, "propagate"))
+	  propagate = 1;
+     else
+	  propagate = 0;
      
      if(0 == strcmp(rights, "get"))
-	req.u.delg_req.rights = DELG_GET;
+	  req.u.delg_req.rights = (propagate == 0) ? DELG_GET : DELG_GET | DELG_DELG;
      else if(0 == strcmp(rights, "put"))
-	  req.u.delg_req.rights = DELG_PUT;
+	  req.u.delg_req.rights = (propagate == 0) ? DELG_PUT : DELG_PUT | DELG_DELG;
      if(0 == strcmp(rights, "both"))
-	req.u.delg_req.rights = DELG_GET | DELG_PUT;
+	  req.u.delg_req.rights = (propagate == 0) ? DELG_GET | DELG_PUT : DELG_GET | DELG_PUT | DELG_DELG;;
 
      req.u.delg_req.host_len = strlen(host);
      req.u.delg_req.host = host;
      req.u.delg_req.time = atoi(time);
 
-     if(0 == strcmp(propagate, "propagate"))
-	  req.u.delg_req.propagate = 1;
-     else
-	  req.u.delg_req.propagate = 0;
 
      if(STATUS_FAILURE == send_message(ssl, &req))
      {
@@ -213,15 +215,21 @@ int do_client_loop(SSL *ssl)
      while(fgets(buf, sizeof(buf), stdin))
      {
 	  op = strtok(buf, " ");
-	  fname = strtok(NULL, " ");
 	  uid = "";
 	  
 	  if(0 == strcmp(buf, "get"))
+	  {
+	       fname = strtok(NULL, "\n");
 	       get(ssl, fname, uid);
+	  }
 	  else if (0 == strcmp(buf, "put"))
+	  {
+	       fname = strtok(NULL, "\n");
 	       put(ssl, fname, uid);
+	  }
 	  else if (0 == strcmp(buf, "delegate"))
 	  {
+	       fname = strtok(NULL, " ");	       
 	       rights = strtok(NULL, " ");
 	       host = strtok(NULL, " ");
 	       time = strtok(NULL, " ");
