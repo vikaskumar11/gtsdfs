@@ -552,30 +552,155 @@ status_t parse_auth_resp(payload_t *pkt, msg_t *msg) {
      return STATUS_SUCCESS;
 }
 
+status_t send_delg_request(SSL *ssl, msg_t *msg) {
+     payload_t payload;
+     payload_t *pkt = &payload;
+     uint32_t tmp32;
+ 
+     msg->hdr.type = REQ_DELG;
+     msg->hdr.tot_len = MSG_HDR_SIZE + DELG_REQ_SIZE;
+     msg->hdr.tot_len += msg->u.delg_req.filename_len;
+     msg->hdr.tot_len += msg->u.delg_req.host_len;
+
+     memset(pkt, 0, sizeof(payload_t));
+
+     payload.buf = malloc(msg->hdr.tot_len);
+
+     if(payload.buf == NULL)
+       return STATUS_FAILURE;
+
+     PUSH(pkt, &msg->hdr.type, 1);
+ 
+     tmp32 = htonl(msg->hdr.tot_len);
+     PUSH(pkt, &tmp32, 4);
+
+     PUSH(pkt, &msg->u.delg_req.del_req, 1);
+     tmp32 = htonl(msg->u.delg_req.filename_len);
+     PUSH(pkt, &tmp32, 4);
+
+     PUSH(pkt, msg->u.delg_req.filename, msg->u.delg_req.filename_len);
+  
+     tmp32 = htonl(msg->u.delg_req.host_len);
+     PUSH(pkt, &tmp32, 4);
+     PUSH(pkt, msg->u.delg_req.host, msg->u.delg_req.host_len);
+
+     PUSH(pkt, &msg->u.delg_req.rights, 1);
+     PUSH(pkt, &msg->u.delg_req.propagate, 1);
+
+     tmp32 = htonl(msg->u.delg_req.time);
+     PUSH(pkt, &tmp32, 4);
+
+     assert(payload.off == msg->hdr.tot_len);
+ 
+     /* send the message */
+     send_payload(ssl, pkt, msg->hdr.tot_len);
+
+     free(payload.buf);
+     return STATUS_SUCCESS;
+};
+
+status_t send_delg_resp(SSL *ssl, msg_t *msg) {
+     payload_t payload;
+     payload_t *pkt = &payload;
+     uint32_t tmp32;
+ 
+     msg->hdr.type = RSP_DELG;
+     msg->hdr.tot_len = MSG_HDR_SIZE + DELG_RSP_SIZE;
+
+     memset(pkt, 0, sizeof(payload_t));
+     payload.buf = malloc(msg->hdr.tot_len);
+
+     if(payload.buf == NULL)
+       return STATUS_FAILURE;
+
+     /* Header */
+     PUSH(pkt, &msg->hdr.type, 1);
+     tmp32 = htonl(msg->hdr.tot_len);
+     PUSH(pkt, &tmp32, 4);
+
+     /* Delg Response */
+     PUSH(pkt, &msg->u.delg_resp.status, 1);
+  
+     assert(payload.off == msg->hdr.tot_len);
+
+     /* send the payload */
+     send_payload(ssl, pkt, msg->hdr.tot_len);
+
+     free(payload.buf);
+
+     return STATUS_SUCCESS;
+
+}
+
+status_t parse_delg_req(payload_t *pkt, msg_t *msg) {
+
+     pkt->off = MSG_HDR_SIZE; 
+
+     msg->u.delg_req.del_req = pop1(pkt);
+     msg->u.delg_req.filename_len = ntohl(pop4(pkt));
+
+     msg->u.delg_req.filename = malloc(msg->u.delg_req.filename_len);
+     if(msg->u.delg_req.filename == NULL)
+       return STATUS_FAILURE;
+
+     POP(pkt, msg->u.delg_req.filename, msg->u.delg_req.filename_len);
+     msg->u.delg_req.filename[msg->u.delg_req.filename_len] = '\0';
+
+     msg->u.delg_req.host_len = ntohl(pop4(pkt));
+     msg->u.delg_req.host = malloc(msg->u.delg_req.host_len);
+
+     if(msg->u.delg_req.host == NULL)
+       return STATUS_FAILURE;
+
+     POP(pkt, msg->u.delg_req.host, msg->u.delg_req.host_len);
+     msg->u.delg_req.host[msg->u.delg_req.host_len] = '\0';
+
+     msg->u.delg_req.rights = pop1(pkt);
+     msg->u.delg_req.propagate = pop1(pkt);
+     msg->u.delg_req.time = ntohl(pop4(pkt));
+
+     return STATUS_SUCCESS;
+}
+
+status_t parse_delg_resp(payload_t *pkt, msg_t *msg) {
+
+     pkt->off = MSG_HDR_SIZE; 
+  
+     msg->u.delg_resp.status = pop1(pkt);
+
+     return STATUS_SUCCESS;
+}
+
 status_t send_message(SSL *ssl, msg_t *msg) {
 
      switch(msg->hdr.type) {
-     case REQ_GET:
-	  send_get_request(ssl, msg);
-	  break;
-     case REQ_PUT:
-	  send_put_request(ssl, msg);
-	  break;
-     case REQ_AUTH:
-	  send_auth_request(ssl, msg);
-	  break;
-     case RSP_GET:
-	  send_get_resp(ssl, msg);
-	  break;
-     case RSP_PUT:
-	  send_put_resp(ssl, msg);
-	  break;
-     case RSP_AUTH:
-	  send_auth_resp(ssl, msg);
-	  break;
-     default:
-	  perror("send_message: Unknown request type\n");
-	  return STATUS_FAILURE;
+       case REQ_GET:
+      send_get_request(ssl, msg);
+      break;
+       case REQ_PUT:
+      send_put_request(ssl, msg);
+      break;
+       case REQ_AUTH:
+      send_auth_request(ssl, msg);
+      break;
+       case RSP_GET:
+      send_get_resp(ssl, msg);
+      break;
+       case RSP_PUT:
+      send_put_resp(ssl, msg);
+      break;
+       case RSP_AUTH:
+      send_auth_resp(ssl, msg);
+      break;
+       case REQ_DELG:
+      send_delg_request(ssl, msg);
+      break;
+       case RSP_DELG:
+      send_delg_resp(ssl, msg);
+      break;
+       default:
+      perror("send_message: Unknown request type\n");
+      return STATUS_FAILURE;
      }
 
      return STATUS_SUCCESS;
@@ -606,6 +731,9 @@ status_t recv_message(SSL *ssl, msg_t *msg) {
      case RSP_AUTH:
 	  parse_auth_resp(msg->pkt, msg);
 	  break;
+     case RSP_DELG:
+    parse_delg_resp(msg->pkt, msg);
+    break;
      default:
 	  perror("recv_message: Unknown request type\n");
 	  return STATUS_FAILURE;
@@ -613,3 +741,6 @@ status_t recv_message(SSL *ssl, msg_t *msg) {
 
      return STATUS_SUCCESS;
 }
+
+
+
