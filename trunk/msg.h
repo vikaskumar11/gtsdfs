@@ -75,6 +75,8 @@
 #define PUT_RSP_SIZE 1
 #define AUTH_REQ_SIZE 4
 #define AUTH_RSP_SIZE 1
+#define DELG_REQ_SIZE 12
+#define DELG_RSP_SIZE 1
 #define TOKEN_SIZE   9
 
 #define DELG_GET 1
@@ -161,12 +163,12 @@ struct delg_req {
   uint32_t filename_len;
   char *filename;
   uint32_t num_tokens;
-  token_info_t tok_info[MAX_TOKENS];
-  uint32_t rights;
+  token_info_t tok_info[MAX_TOKENS];  
   uint32_t host_len;
-  uint32_t time;
   char *host;
-  uint32_t propagate   ;
+  uint8_t rights;
+  uint8_t propagate;
+  uint32_t time;
 };
 
 typedef struct delg_req delg_req_t;
