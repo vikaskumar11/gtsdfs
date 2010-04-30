@@ -1,6 +1,8 @@
 #include "msg.h"
 //#include "msg.c"
 
+char *type_to_str[] = { "", "GET_REQ", "GET_RSP", "PUT_REQ", "PUT_RSP", "Unknown", "Unknown", "DELG_REQ", "DELG_RSP" }; 
+
 void message_dump(payload_t *pkt, int pkt_len) {
      int lim, count;
 
@@ -52,7 +54,7 @@ status_t send_payload(SSL *ssl, payload_t *pkt, unsigned int pkt_len) {
 	  }
      }
 
-     printf("\nSending Message >> \n");
+     printf("\nSending %s Message >> \n", type_to_str[(int)(pkt->buf[0])]);
      message_dump(pkt, pkt_len);
      return STATUS_SUCCESS;
 
@@ -123,7 +125,7 @@ status_t receive_payload(SSL *ssl, msg_t *msg) {
 
      msg->pkt = pkt;
 
-     printf("Received message >>\n");
+     printf("Received %s message >>\n", type_to_str[msg->hdr.type]);
      message_dump(pkt, msg->hdr.tot_len);
 
      return STATUS_SUCCESS;

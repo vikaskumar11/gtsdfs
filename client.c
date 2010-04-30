@@ -70,7 +70,7 @@ status_t handle_delg_resp( msg_t *req, msg_t *resp) {
 }
 
 status_t handle_client_message(SSL *ssl, msg_t *req, msg_t *resp) {
-
+     status_t rt;
      if(STATUS_FAILURE == recv_message(ssl, resp)) {
 	  return STATUS_FAILURE;
      }
@@ -81,19 +81,17 @@ status_t handle_client_message(SSL *ssl, msg_t *req, msg_t *resp) {
 	  //handle_auth_res(resp);
 	  break;
      case RSP_GET:
-	  handle_get_resp(req, resp);
+	  rt = handle_get_resp(req, resp);
 	  break;
      case RSP_PUT:
-	  handle_put_resp(req, resp);
+	  rt = handle_put_resp(req, resp);
 	  break;
      case RSP_DELG:
-	  handle_delg_resp(req, resp);
+	  rt = handle_delg_resp(req, resp);
 	  break;
 
      }
-
-     return STATUS_SUCCESS;
-
+     return rt;
 }
 
 int get(SSL *ssl, char *fname, char *uid)
@@ -112,7 +110,7 @@ int get(SSL *ssl, char *fname, char *uid)
      if(STATUS_FAILURE == send_message(ssl, &req))
      {
 	  perror("send req failed\n");
-	  return 0;
+	  return STATUS_FAILURE;
      }
 
      return handle_client_message(ssl, &req, &resp);
@@ -154,7 +152,7 @@ int put(SSL *ssl, char *fname, char *uid)
      if(STATUS_FAILURE == send_message(ssl, &req))
      {
 	  perror("send req failed\n");
-	  return 0;
+	  return STATUS_FAILURE;
      }
 
      return handle_client_message(ssl, &req, &res);
@@ -193,7 +191,7 @@ int delegate(SSL *ssl, char *fname, char *uid, char *rights, char *host, char *t
      if(STATUS_FAILURE == send_message(ssl, &req))
      {
 	  perror("send req failed\n");
-	  return 0;
+	  return STATUS_FAILURE;
      }
 
      return handle_client_message(ssl, &req, &res);
@@ -202,30 +200,40 @@ int delegate(SSL *ssl, char *fname, char *uid, char *rights, char *host, char *t
 int do_client_loop(SSL *ssl)
 {
      char buf[512];
-     char *op, *fname, *uid, *rights, *host, *time, *propogate;
+     char *op, *fname, *uid, *rights, *host, *time, *propagate;
+     int rt;
+     struct timeval t1, t2, t;
+
      printf("do loop\n");
 
      fprintf(stdout, "possible commands:\n");
      fprintf(stdout, "\tget <file_name>\n");
      fprintf(stdout, "\tput <file_name>\n");
-     fprintf(stdout, "\tdelegate <file_name> <get/put/both> <host> <time> <propogate/not_propogate>\n");
+     fprintf(stdout, "\tdelegate <file_name> <get/put/both> <host> <time> <propagate/not_propagate>\n");
      fprintf(stdout, "\tend-session\n");
      fflush(NULL);
 
+
      while(fgets(buf, sizeof(buf), stdin))
      {
+	  timerclear(&t1);
+	  timerclear(&t2);	  
+	  timerclear(&t);
+
+	  gettimeofday(&t1, NULL);
+
 	  op = strtok(buf, " ");
 	  uid = "";
 	  
 	  if(0 == strcmp(buf, "get"))
 	  {
 	       fname = strtok(NULL, "\n");
-	       get(ssl, fname, uid);
+	       rt = get(ssl, fname, uid);
 	  }
 	  else if (0 == strcmp(buf, "put"))
 	  {
 	       fname = strtok(NULL, "\n");
-	       put(ssl, fname, uid);
+	       rt = put(ssl, fname, uid);
 	  }
 	  else if (0 == strcmp(buf, "delegate"))
 	  {
@@ -233,14 +241,23 @@ int do_client_loop(SSL *ssl)
 	       rights = strtok(NULL, " ");
 	       host = strtok(NULL, " ");
 	       time = strtok(NULL, " ");
-	       propogate = strtok(NULL, " ");
-	       delegate(ssl, fname, uid, rights, host, time, propogate);
+	       propagate = strtok(NULL, "\n");
+	       rt = delegate(ssl, fname, uid, rights, host, time, propagate);
 	  }
 	  else if (0 == strcmp(buf, "end-session"))
 	       return 1;
 	  else
 	       fprintf(stderr, "Incorrect input\n");
 
+	  if(rt == STATUS_SUCCESS)
+	       printf("REQUEST SUCCESSFULL\n");
+	  else if (rt == STATUS_FAILURE)
+	       printf("REQUEST FAILED\n");
+	  else 	printf("Unknown return type\n");
+
+	  gettimeofday(&t2, NULL);
+	  timersub(&t2, &t1, &t);
+	  printf("Time take for request processing = [%d(s) %d(us)]\n", (int)t.tv_sec, (int)t.tv_usec);
 	  memset(buf, 0, 256);
      }
 		
